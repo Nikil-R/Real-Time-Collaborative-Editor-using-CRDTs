@@ -142,3 +142,41 @@ Codes: `BAD_MESSAGE`, `TOO_LARGE`, `RATE_LIMITED`, `DOC_NOT_FOUND`, `REPLICA_IN_
 - First message after connect includes `"v": 1` in `hello`. The server rejects unknown versions with `BAD_MESSAGE`.
 - Additive messages (v1.1: `snapshot`, `sync`, `catchup`, `more`, `REPLICA_IN_USE`) keep `v: 1`; a message that changes the meaning of an existing field bumps `v`. Update this document in the same commit as any change.
 - A `ops` message may carry presence-free CRDT operations only; the server validates shape (`op_id`, `kind`, and the fields each kind needs) and stores the rest untouched.
+
+## 8. Workspaces: REST API and the project channel (v1.1, additive)
+
+A **project** is a set of files; every file is an ordinary document (section 1 to 7 apply to
+it unchanged, one WebSocket per open file). The project channel never carries operations.
+
+### REST
+| Method and path | Purpose |
+|---|---|
+| `POST /api/projects` `{name}` | Create a project with starter files. Returns `{id, name, files}`. |
+| `GET /api/projects/{id}` | `{id, name, files:[{id, name, created_at}]}` (deleted files omitted). |
+| `POST /api/projects/{id}/files` `{name}` | Create a file. `409` if the name exists (case-insensitive), `422` for an invalid name. |
+| `PATCH /api/projects/{id}/files/{file_id}` `{name}` | Rename. |
+| `DELETE /api/projects/{id}/files/{file_id}` | Soft delete (the operation log is kept); the file can no longer be opened. |
+| `GET /api/projects/{id}/activity?limit=50` | `{events:[...]}`, newest first. |
+| `POST /api/files/{file_id}/claim-seed` | `{text}` with the file's starter text for the first caller, `{text: null}` for everyone else. The server cannot build CRDT operations, so exactly one client types the starter text in. |
+
+An optional `X-Actor` header names the person for the activity feed. Names are paths such as
+`src/app.ts` (1 to 120 characters, no empty segments, no `..`, no backslashes or control characters).
+
+### `/ws/projects/{project_id}`
+Client to server: `hello` (same fields as section 2.1; `replica` identifies the browser tab), `focus`
+`{file_id: uuid | null}` (which file this person has open), `ping`.
+
+Server to client:
+```json
+{ "type": "welcome", "project": {"id": "…", "name": "…"}, "files": [ ... ],
+  "peers": [ {"replica": "…", "name": "…", "color": "#…", "file_id": "… or null"} ],
+  "activity": [ /* newest first */ ] }
+{ "type": "files_changed", "files": [ ... ] }
+{ "type": "focus", "replica": "…", "name": "…", "color": "#…", "file_id": "…" }
+{ "type": "activity", "event": {"id": 7, "ts": "…", "actor": "Priya", "kind": "edit", "file_id": "…", "file_name": "src/app.ts", "count": 42} }
+{ "type": "peer_joined" | "peer_left" | "pong" | "error" }
+```
+`kind` is `file_created`, `file_renamed`, `file_deleted` or `edit`. Edit activity is collected in
+memory and written every few seconds, merged per person and file (same person, same file, within
+60 s: one entry with a growing `count`). Messages are fanned out through Redis like document
+messages, on the room key `project:{id}`.

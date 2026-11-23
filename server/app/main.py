@@ -23,12 +23,18 @@ from sqlalchemy import event, text
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from . import protocol as proto
+from .activity import ActivityBuffer
 from .config import Settings
 from .fanout import Fanout, RedisFanout
 from .hub import Client, Hub
 from .logging_setup import configure_logging
 from .metrics import Metrics
+from .projects import register_project_routes
+from .projects_store import ProjectStore
 from .repository import DocumentNotFoundError, OperationLog, StoredOp
+from .wsutil import SocketAdapter as _SocketAdapter
+from .wsutil import origin_allowed as _origin_allowed
+from .wsutil import send_error as _send_error
 
 log = structlog.get_logger()
 
@@ -89,7 +95,17 @@ def create_app(settings: Settings | None = None, redis_client: Any | None = None
 
         hub = Hub()
         metrics = Metrics()
-        state.update(engine=engine, oplog=oplog, fanout=fanout, hub=hub, metrics=metrics)
+        projects = ProjectStore(oplog)
+        activity = ActivityBuffer(projects, hub, fanout, settings.activity_flush_sec)
+        state.update(
+            engine=engine,
+            oplog=oplog,
+            fanout=fanout,
+            hub=hub,
+            metrics=metrics,
+            projects=projects,
+            activity=activity,
+        )
         app.state.hub = hub
         app.state.oplog = oplog
         app.state.metrics = metrics
@@ -102,10 +118,12 @@ def create_app(settings: Settings | None = None, redis_client: Any | None = None
             await _handle_remote(hub, fanout, settings, doc_id, message, exclude, origin)
 
         await fanout.start(on_remote)
+        activity.start()
         log.info("server_started", server_id=settings.server_id, redis=fanout.enabled)
         try:
             yield
         finally:
+            await activity.stop()
             await fanout.stop()
             await engine.dispose()
             log.info("server_stopped", server_id=settings.server_id)
@@ -115,7 +133,7 @@ def create_app(settings: Settings | None = None, redis_client: Any | None = None
         app.add_middleware(
             CORSMiddleware,
             allow_origins=settings.origins,
-            allow_methods=["GET", "POST"],
+            allow_methods=["GET", "POST", "PATCH", "DELETE"],
             allow_headers=["*"],
         )
 
@@ -166,6 +184,8 @@ def create_app(settings: Settings | None = None, redis_client: Any | None = None
             raise HTTPException(404, "no snapshot")
         return {"up_to_seq": snap.up_to_seq, "state": snap.state}
 
+    register_project_routes(app, state, settings)
+
     # ------------------------------------------------------------- WebSocket
 
     @app.websocket("/ws/{doc_id}")
@@ -178,32 +198,6 @@ def create_app(settings: Settings | None = None, redis_client: Any | None = None
 # --------------------------------------------------------------------------
 # WebSocket session
 # --------------------------------------------------------------------------
-
-
-class _SocketAdapter:
-    """Adapts a Starlette WebSocket to the Hub's small Sender protocol."""
-
-    def __init__(self, ws: WebSocket) -> None:
-        self.ws = ws
-
-    async def send_text(self, data: str) -> None:
-        await self.ws.send_text(data)
-
-    async def close(self, code: int = 1000) -> None:
-        await self.ws.close(code)
-
-
-def _origin_allowed(ws: WebSocket, settings: Settings) -> bool:
-    origin = ws.headers.get("origin")
-    if origin is None or "*" in settings.origins:
-        return True  # non-browser clients (load test, scripts) send no Origin
-    return origin in settings.origins
-
-
-async def _send_error(ws: WebSocket, metrics: Metrics, code: str, message: str) -> None:
-    metrics.errors_total.labels(code=code).inc()
-    with contextlib.suppress(Exception):
-        await ws.send_text(json.dumps(proto.error_message(code, message)))
 
 
 async def _serve_socket(
@@ -226,7 +220,8 @@ async def _serve_socket(
         await ws.close(4404)
         return
     doc_id = str(doc_uuid)
-    if await oplog.get_document(doc_uuid) is None:
+    doc_row = await oplog.get_document(doc_uuid)
+    if doc_row is None or doc_row.deleted_at is not None:
         await _send_error(ws, metrics, proto.DOC_NOT_FOUND, "document not found")
         await ws.close(4404)
         return
@@ -464,6 +459,11 @@ async def _store_and_broadcast(
     reply({"type": "ack", "batch_id": msg.batch_id, "max_seq": result.max_seq, "seqs": result.seqs})
 
     if result.new_ops:
+        ref = await state["projects"].file_ref(doc_uuid)
+        if ref is not None:  # a workspace file: count the edit for the activity feed
+            state["activity"].add(
+                ref.project_id, client.name, doc_uuid, ref.name, len(result.new_ops)
+            )
         broadcast = {"type": "ops", "ops": _ops_payload(result.new_ops)}
         t0 = time.perf_counter()
         hub.broadcast(client.doc_id, broadcast, exclude_replica=client.replica)
@@ -490,16 +490,23 @@ async def _handle_remote(
     kind = message.get("type")
     peers = hub.remote_peers.setdefault(doc_id, {})
     if kind == "peer_joined":
-        peers[(origin, message["replica"])] = {
+        info: dict[str, Any] = {
             "replica": message["replica"],
             "name": message.get("name", "Anonymous"),
             "color": message.get("color", "#888888"),
         }
+        if "file_id" in message:
+            info["file_id"] = message["file_id"]
+        peers[(origin, message["replica"])] = info
         if message.get("announce"):
             # Tell the newcomer's process about the people connected here.
             for c in hub.room(doc_id).values():
                 await fanout.publish(doc_id, {"type": "peer_joined", **c.peer_info()})
         message = {k: v for k, v in message.items() if k != "announce"}
+    elif kind == "focus":
+        known = peers.get((origin, message["replica"]))
+        if known is not None:
+            known["file_id"] = message.get("file_id")
     elif kind == "peer_left":
         peers.pop((origin, message["replica"]), None)
     if not peers:

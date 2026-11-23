@@ -28,6 +28,8 @@ class Settings(BaseSettings):
     catchup_page_size: int = 5000
     hello_timeout_sec: float = 10.0
     max_clients_per_document: int = 200
+    # How often collected edit activity is written to the project history.
+    activity_flush_sec: float = 5.0
     # Create tables on start-up. Production runs `alembic upgrade head` instead.
     auto_create_tables: bool = False
 

@@ -39,15 +39,18 @@ class Client:
     dropped: bool = False
     meta: dict[str, Any] = field(default_factory=dict)
 
-    def peer_info(self) -> dict[str, str]:
-        return {"replica": self.replica, "name": self.name, "color": self.color}
+    def peer_info(self) -> dict[str, Any]:
+        info: dict[str, Any] = {"replica": self.replica, "name": self.name, "color": self.color}
+        if "file_id" in self.meta:  # project channel: which file this person has open
+            info["file_id"] = self.meta["file_id"]
+        return info
 
 
 class Hub:
     def __init__(self) -> None:
         self.rooms: dict[str, dict[str, Client]] = {}
         # Peers connected to OTHER server processes, learned through Redis.
-        self.remote_peers: dict[str, dict[tuple[str, str], dict[str, str]]] = {}
+        self.remote_peers: dict[str, dict[tuple[str, str], dict[str, Any]]] = {}
 
     # --------------------------------------------------------------- rooms
 
@@ -73,11 +76,11 @@ class Hub:
     def client_count(self) -> int:
         return sum(len(r) for r in self.rooms.values())
 
-    def peers(self, doc_id: str, exclude_replica: str | None = None) -> list[dict[str, str]]:
+    def peers(self, doc_id: str, exclude_replica: str | None = None) -> list[dict[str, Any]]:
         out = [c.peer_info() for c in self.room(doc_id).values()]
         out.extend(self.remote_peers.get(doc_id, {}).values())
         seen: set[str] = set()
-        unique: list[dict[str, str]] = []
+        unique: list[dict[str, Any]] = []
         for p in out:
             if p["replica"] == exclude_replica or p["replica"] in seen:
                 continue

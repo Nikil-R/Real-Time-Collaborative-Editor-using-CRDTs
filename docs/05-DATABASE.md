@@ -93,3 +93,25 @@ Alternative (stretch): a Python port of the CRDT on the server builds snapshots.
 - Re-sending the same batch stores nothing new.
 - Catch-up paging returns operations in order with no omissions.
 - Killing the server mid-batch never leaves a half-stored batch (single transaction per batch).
+
+## 10. Workspace tables (migration 0002)
+
+```sql
+CREATE TABLE projects (id UUID PRIMARY KEY, name TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT now());
+
+ALTER TABLE documents
+  ADD COLUMN project_id UUID REFERENCES projects(id) ON DELETE CASCADE,  -- NULL = standalone document
+  ADD COLUMN name TEXT,                  -- file path inside the project
+  ADD COLUMN deleted_at TIMESTAMPTZ,     -- soft delete; the operation log is kept
+  ADD COLUMN seed_text TEXT,             -- starter text, claimed by exactly one client
+  ADD COLUMN seed_claimed BOOLEAN NOT NULL DEFAULT false;
+
+CREATE TABLE activity (
+  id BIGSERIAL PRIMARY KEY, project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  ts TIMESTAMPTZ NOT NULL DEFAULT now(), actor TEXT NOT NULL, kind VARCHAR(32) NOT NULL,
+  file_id UUID, file_name TEXT, count INTEGER NOT NULL DEFAULT 0
+);
+```
+The migration is additive: existing standalone documents keep working. The starter-text claim is one
+atomic `UPDATE ... WHERE seed_claimed = false ... RETURNING seed_text`, so two clients opening a new
+file at the same moment cannot both insert it.
