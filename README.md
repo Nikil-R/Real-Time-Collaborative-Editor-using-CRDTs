@@ -44,6 +44,7 @@ A real-time **collaborative code workspace**: a multi-file project where many pe
 10. [Repository layout](#repository-layout)
 11. [Limitations](#limitations)
 12. [Documentation](#documentation)
+13. [License](#license)
 
 ## At a glance
 
@@ -332,3 +333,7 @@ docs/               design, protocol, database, testing, deployment, results, le
 ## Documentation
 
 [`01-PRD`](docs/01-PRD.md) goals and targets, [`02-ARCHITECTURE`](docs/02-ARCHITECTURE.md), [`03-CRDT-DESIGN`](docs/03-CRDT-DESIGN.md), [`04-PROTOCOL`](docs/04-PROTOCOL.md), [`05-DATABASE`](docs/05-DATABASE.md), [`06-ROADMAP`](docs/06-ROADMAP.md) (status of every deliverable), [`07-TESTING`](docs/07-TESTING.md), [`08-DEPLOYMENT`](docs/08-DEPLOYMENT.md), [`09-DEMO`](docs/09-DEMO.md), [`10-GLOSSARY`](docs/10-GLOSSARY.md), [`learning-journal`](docs/learning-journal.md), and the dated measurements in [`docs/results/`](docs/results/).
+
+## License
+
+Released under the [MIT License](LICENSE).
