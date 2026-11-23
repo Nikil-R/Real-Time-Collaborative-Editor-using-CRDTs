@@ -87,7 +87,12 @@ async def test_same_replica_on_two_processes_is_refused(
         doc = await create_doc(one)
         await asyncio.sleep(0.2)
         async with open_client(one, doc, "r-a"):
-            await asyncio.sleep(0.3)
+            # Wait until process two has learned about r-a (the first message
+            # through a real Redis can take a second; a fixed sleep is flaky).
+            for _ in range(100):
+                if two.app.state.hub.remote_peers:
+                    break
+                await asyncio.sleep(0.1)
             async with open_client(two, doc, "r-a", hello=False) as (dup, _):
                 await dup.send({"type": "hello", "v": 1, "replica": "r-a"})
                 assert (await dup.recv_type("error"))["code"] == "REPLICA_IN_USE"

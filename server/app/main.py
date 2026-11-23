@@ -81,7 +81,9 @@ def create_app(settings: Settings | None = None, redis_client: Any | None = None
         elif settings.redis_url:
             from redis import asyncio as aioredis
 
-            fanout = RedisFanout(aioredis.from_url(settings.redis_url), settings.server_id)
+            fanout = RedisFanout(
+                aioredis.from_url(settings.redis_url, protocol=2), settings.server_id
+            )
         else:
             fanout = Fanout()
 

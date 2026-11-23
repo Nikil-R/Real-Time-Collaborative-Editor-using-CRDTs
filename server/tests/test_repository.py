@@ -160,7 +160,9 @@ async def test_compaction_keeps_the_safety_window(oplog: OperationLog) -> None:
     assert deleted == 10  # old enough, below the snapshot (15) and outside the last 5
     assert await oplog.oldest_seq(doc.id) == 11
     async with oplog.session_factory() as session:
-        count = await session.scalar(select(func.count()).select_from(Operation))
+        count = await session.scalar(
+            select(func.count()).select_from(Operation).where(Operation.doc_id == doc.id)
+        )
         assert count == 10
 
 

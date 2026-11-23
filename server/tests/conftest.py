@@ -79,7 +79,7 @@ def redis_pair() -> tuple[Any, Any]:
     if url:
         from redis import asyncio as aioredis
 
-        return aioredis.from_url(url), aioredis.from_url(url)
+        return aioredis.from_url(url, protocol=2), aioredis.from_url(url, protocol=2)
     import fakeredis
 
     shared = fakeredis.FakeServer()
@@ -91,6 +91,7 @@ def make_settings(tmp_path: Path, **overrides: Any) -> Settings:
         "database_url": database_url_for(tmp_path),
         "auto_create_tables": True,
         "allowed_origins": "*",
+        "redis_url": None,  # hermetic: never pick up a developer .env
         "log_level": "warning",
     }
     values.update(overrides)

@@ -36,7 +36,10 @@ async def test_compact_all_only_touches_documents_with_a_snapshot(
 
     deleted = await compact_all(settings, keep_ops=5, keep_days=7)
 
-    assert deleted == {str(with_snapshot.id): 15}  # up to the snapshot (15), 20-5 = 15
+    # up to the snapshot (15) and outside the last 5 (20 - 5 = 15). Other documents in a
+    # shared test database may also be compacted, so only look at ours.
+    assert deleted[str(with_snapshot.id)] == 15
+    assert str(without_snapshot.id) not in deleted
     engine = create_async_engine(settings.async_database_url)
     oplog = OperationLog(engine)
     assert await oplog.oldest_seq(with_snapshot.id) == 16
