@@ -65,9 +65,9 @@ async def test_mixed_batch_stores_only_new_ops(oplog: OperationLog) -> None:
     result = await oplog.append_batch(doc.id, [ins("a", 1, 1), ins("a", 2, 2)])
     assert [o.payload["op_id"]["n"] for o in result.new_ops] == [2]
     assert result.duplicates == 1
-    # seq stays strictly increasing even though a number may be skipped
-    seqs = [o.seq for o in await oplog.ops_since(doc.id, 0, 10)]
-    assert seqs == sorted(set(seqs))
+    # seq numbers are gap-free: duplicates do not burn a number
+    assert [o.seq for o in await oplog.ops_since(doc.id, 0, 10)] == [1, 2]
+    assert await oplog.head_seq(doc.id) == 2
 
 
 async def test_missing_document_raises(oplog: OperationLog) -> None:
@@ -90,15 +90,15 @@ async def test_concurrent_writers_get_unique_increasing_seq(oplog: OperationLog)
     assert len(all_seqs) == 120
     assert len(set(all_seqs)) == 120  # no duplicate seq
     stored = [o.seq for o in await oplog.ops_since(doc.id, 0, 1000)]
-    assert stored == sorted(stored)
-    assert len(stored) == 120
+    assert stored == list(range(1, 121))  # strictly increasing and gap-free
 
 
 async def test_concurrent_identical_batches_store_each_op_once(oplog: OperationLog) -> None:
     doc = await oplog.create_document()
     batch = [ins("a", i, i) for i in range(1, 11)]
     await asyncio.gather(*(oplog.append_batch(doc.id, batch) for _ in range(5)))
-    assert len(await oplog.ops_since(doc.id, 0, 100)) == 10
+    assert [o.seq for o in await oplog.ops_since(doc.id, 0, 100)] == list(range(1, 11))
+    assert await oplog.head_seq(doc.id) == 10
 
 
 async def test_catch_up_pages_return_everything_in_order(oplog: OperationLog) -> None:

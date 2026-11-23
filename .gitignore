@@ -9,3 +9,10 @@ __pycache__/
 .pytest_cache/
 coverage/
 .DS_Store
+*.db
+*.db-journal
+.next/
+out/
+.turbo/
+test-results/
+playwright-report/

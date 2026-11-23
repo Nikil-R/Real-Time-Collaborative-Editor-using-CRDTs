@@ -39,7 +39,7 @@ CREATE INDEX operations_doc_seq_idx ON operations (doc_id, seq);
 ```
 
 ## 3. Assigning `seq`
-Must be gap-tolerant but strictly increasing per document, and safe under concurrent writers.
+Strictly increasing and **gap-free** per document, and safe under concurrent writers. Gap-free matters: broadcasts can reach a client out of order (two batches commit in order but are queued for sending in either order), so a client tracks the highest seq `S` such that it has seen every seq from 1 to `S`. A hole above `S` means a missed message and triggers a `sync`. Gaps would make holes undetectable.
 
 ```sql
 -- inside one transaction per batch
@@ -48,7 +48,7 @@ WHERE id = $doc_id
 RETURNING last_seq;                               -- gives the top of the reserved range
 -- then insert operations with seq = (top - n + 1) .. top
 ```
-The row-level lock taken by the `UPDATE` serialises writers for the same document and keeps different documents independent. Duplicate ops (unique violation) are skipped with `INSERT ... ON CONFLICT DO NOTHING`, and the unused reserved numbers are allowed to be gaps.
+The row-level lock taken by the `UPDATE` serialises writers for the same document and keeps different documents independent. Duplicates are found with a `SELECT` on `(op_replica, op_counter)` after the lock is held and are not inserted. If the batch contained duplicates, the unused reserved numbers are returned in the same transaction (`UPDATE documents SET last_seq = last_seq - unused`), which is safe because the row lock is still held and nobody else has seen those numbers. The unique constraint remains as a backstop.
 
 ## 4. Reads
 - **Catch-up:** `SELECT seq, payload FROM operations WHERE doc_id = $1 AND seq > $2 ORDER BY seq LIMIT 5000` (page through if more).

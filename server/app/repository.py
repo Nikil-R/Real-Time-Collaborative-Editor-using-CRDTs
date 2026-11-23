@@ -76,7 +76,8 @@ class OperationLog:
            serialises writers of the same document and leaves other documents
            alone.
         2. Look up which (replica, counter) pairs are already stored.
-        3. Insert only the new ones; unused reserved numbers become gaps.
+        3. Insert only the new ones and give back the unused reserved numbers,
+           so the sequence has no gaps.
         """
         unique: dict[tuple[str, int], dict[str, Any]] = {}
         for op in ops:
@@ -122,6 +123,18 @@ class OperationLog:
                 )
                 new_ops.append(StoredOp(seq=next_seq, payload=op))
                 next_seq += 1
+
+            unused = reserved - len(new_ops)
+            if unused:
+                # Give back the reserved numbers that were not needed. We still
+                # hold the row lock taken by the UPDATE above, so nobody else
+                # has seen them: seq stays gap-free, which lets clients detect
+                # a missed message by looking for a hole.
+                await session.execute(
+                    update(Document)
+                    .where(Document.id == doc_id)
+                    .values(last_seq=Document.last_seq - unused)
+                )
 
             max_seq = max([s.seq for s in new_ops] + list(existing.values()))
             return AppendResult(
