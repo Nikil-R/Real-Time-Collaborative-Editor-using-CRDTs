@@ -38,6 +38,15 @@ Nothing here is specific to a cloud provider; the project is not tied to AWS.
 
 **Status:** the Compose stack, Dockerfiles and Caddyfile were written but have **not** been run on the development machine (Docker was not installed there). Run `docker compose build` and a smoke test before relying on them; the CI workflow builds the images on every push.
 
+## 3a. Free hosted demo (Vercel and Render)
+
+The public demo needs no Docker and no paid service.
+
+- **Web:** Vercel project with root directory `apps/web` (framework Next.js) and `NEXT_PUBLIC_API_URL` set to the API address. It is set at build time, so changing it needs a new deployment.
+- **API:** Render free web service, Python runtime. Build `pip install uv && cd server && uv sync --frozen --no-dev`; start `cd server && .venv/bin/uvicorn app.main:app --host 0.0.0.0 --port $PORT --ws-max-size 1048576`. Environment: `PYTHON_VERSION=3.12.7`, `AUTO_CREATE_TABLES=true`, `ALLOWED_ORIGINS=*`, `DATABASE_URL=sqlite+aiosqlite:///./collab.db`. Redis is not needed with one process.
+- **Limits of the free tier:** the service sleeps after about 15 minutes without traffic and takes up to a minute to wake. The disk is not persistent, so the SQLite file (and every workspace in it) is lost on a restart or redeploy. That is acceptable for a demo and not for real data; use PostgreSQL for anything that must survive.
+- **Keeping it awake:** an external monitor that requests `GET /health` every 10 minutes prevents the idle sleep.
+
 ## 3b. Compaction
 `uv run python -m app.compact --keep-ops 10000 --keep-days 7` (inside the container: `docker compose exec server python -m app.compact`) deletes operations covered by a stored snapshot and outside the safety window. Run it from a daily cron or systemd timer.
 
