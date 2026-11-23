@@ -3,7 +3,7 @@
 Working agreements for this repository.
 
 ## What this project is
-A learning-and-resume project: a real-time collaborative code workspace built on a hand-written RGA CRDT. The goal is understanding as much as shipping, so decisions are explained and the core algorithm is not hidden behind a library. Yjs is used only as a comparison.
+A learning-focused project: a real-time collaborative code workspace built on a hand-written RGA CRDT. The goal is understanding as much as shipping, so decisions are explained and the core algorithm is not hidden behind a library. Yjs is used only as a comparison.
 
 ## Rules
 1. Read `docs/03-CRDT-DESIGN.md` before changing anything in `packages/crdt`. Do not change the ordering rule without updating that doc and the property tests.
