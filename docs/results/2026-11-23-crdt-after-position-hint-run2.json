@@ -1,0 +1,95 @@
+{
+  "node": "v24.16.0",
+  "rows": [
+    {
+      "scenario": "one paste of n chars (chain of inserts)",
+      "n": 1000,
+      "ms": 5.368399999999951,
+      "heapMB": 1.3607330322265625
+    },
+    {
+      "scenario": "one paste of n chars (chain of inserts)",
+      "n": 10000,
+      "ms": 19.353200000000015,
+      "heapMB": 3.3582534790039062
+    },
+    {
+      "scenario": "one paste of n chars (chain of inserts)",
+      "n": 100000,
+      "ms": 368.2601,
+      "heapMB": 28.481422424316406
+    },
+    {
+      "scenario": "type n chars one by one at the end",
+      "n": 1000,
+      "ms": 36.26339999999993,
+      "heapMB": -0.8309707641601562
+    },
+    {
+      "scenario": "type n chars one by one at the end",
+      "n": 10000,
+      "ms": 445.0118,
+      "heapMB": 7.6378936767578125
+    },
+    {
+      "scenario": "type n chars one by one at the end",
+      "n": 30000,
+      "ms": 38979.1269,
+      "heapMB": 21.280349731445312
+    },
+    {
+      "scenario": "n random single-char inserts",
+      "n": 1000,
+      "ms": 158.98530000000028,
+      "heapMB": 0.9668502807617188
+    },
+    {
+      "scenario": "n random single-char inserts",
+      "n": 10000,
+      "ms": 3107.7793999999994,
+      "heapMB": -28.61841583251953
+    },
+    {
+      "scenario": "n random single-char inserts",
+      "n": 30000,
+      "ms": 24836.204900000004,
+      "heapMB": -27.50847625732422
+    },
+    {
+      "scenario": "n random single-char deletes (after n inserts, not timed separately)",
+      "n": 1000,
+      "ms": 835.2004000000015,
+      "heapMB": 0.7508163452148438
+    },
+    {
+      "scenario": "n random single-char deletes (after n inserts, not timed separately)",
+      "n": 10000,
+      "ms": 3871.315300000002,
+      "heapMB": 0.9646148681640625
+    },
+    {
+      "scenario": "n random single-char deletes (after n inserts, not timed separately)",
+      "n": 30000,
+      "ms": 120790.5794,
+      "heapMB": 6.810020446777344
+    },
+    {
+      "scenario": "apply n remote inserts one op at a time (in order)",
+      "n": 1000,
+      "ms": 95.511599999998,
+      "heapMB": 0.8868865966796875
+    },
+    {
+      "scenario": "apply n remote inserts one op at a time (in order)",
+      "n": 10000,
+      "ms": 1385.4336999999941,
+      "heapMB": 3.4597930908203125
+    },
+    {
+      "scenario": "apply n remote inserts one op at a time (in order)",
+      "n": 30000,
+      "ms": 32207.48749999999,
+      "heapMB": 12.003311157226562
+    }
+  ]
+}

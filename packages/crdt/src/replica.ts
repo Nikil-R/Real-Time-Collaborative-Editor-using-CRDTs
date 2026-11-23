@@ -39,8 +39,19 @@ export class Replica {
   private opCounter = 0;
   /** The sequence, tombstones included. ROOT is implicit at index -1. */
   private nodes: Node[] = [];
-  /** idKey -> position in `nodes`. Kept in step with the array. */
-  private index = new Map<string, number>();
+  /**
+   * idKey -> node. Positions are not stored: they shift on every insert, and
+   * rebuilding them was the dominant cost in the first benchmark. A position
+   * is found with `nodes.indexOf(node)` (a native linear scan) when needed.
+   */
+  private index = new Map<string, Node>();
+  /**
+   * Position of the node inserted last. Chains of inserts (a paste, or someone
+   * typing a word) each use the previous node as origin, so this turns the
+   * origin lookup from a scan into one comparison. It validates itself:
+   * `nodes[hintPos] === node` is checked before it is trusted.
+   */
+  private hintPos = -1;
   /** Ids of every applied insert (idempotence). */
   private seen = new Set<string>();
   /** Inserts waiting for their origin, keyed by the origin's idKey. */
@@ -216,15 +227,13 @@ export class Replica {
   }
 
   private applyRemoteDelete(op: DeleteOp, changes: Change[]): void {
-    const targetKey = idKey(op.target);
-    const pos = this.index.get(targetKey);
-    if (pos === undefined) {
+    const node = this.index.get(idKey(op.target));
+    if (node === undefined) {
       this.parkDelete(op);
       return;
     }
-    const node = this.nodes[pos]!;
     if (node.deleted) return; // duplicate or already deleted: nothing to do
-    const from = this.visibleOffsetBefore(pos);
+    const from = this.visibleOffsetBefore(this.positionOf(node));
     node.deleted = true;
     pushChange(changes, { from, to: from + node.char.length, insert: "" });
   }
@@ -278,9 +287,9 @@ export class Replica {
    */
   indexOfId(id: CharId): number {
     if (idEquals(id, ROOT)) return 0;
-    const pos = this.index.get(idKey(id));
-    if (pos === undefined) return -1;
-    return this.visibleOffsetBefore(pos + 1);
+    const node = this.index.get(idKey(id));
+    if (node === undefined) return -1;
+    return this.visibleOffsetBefore(this.positionOf(node) + 1);
   }
 
   // ------------------------------------------------------------------ state
@@ -312,9 +321,10 @@ export class Replica {
     for (const [clock, replica, char, deleted] of state.nodes) {
       const id: CharId = { clock, replica };
       const key = idKey(id);
-      r.index.set(key, r.nodes.length);
+      const node: Node = { id, char, deleted: deleted === 1 };
+      r.index.set(key, node);
       r.seen.add(key);
-      r.nodes.push({ id, char, deleted: deleted === 1 });
+      r.nodes.push(node);
     }
     for (const op of state.pending) {
       if (op.type === "ins") r.parkInsert(op);
@@ -336,25 +346,30 @@ export class Replica {
     if (idEquals(op.origin, ROOT)) {
       pos = 0;
     } else {
-      const originPos = this.index.get(idKey(op.origin));
-      if (originPos === undefined) {
+      const originNode = this.index.get(idKey(op.origin));
+      if (originNode === undefined) {
         throw new Error(`origin ${idKey(op.origin)} not found`);
       }
-      pos = originPos + 1;
+      pos = this.positionOf(originNode) + 1;
     }
 
     while (pos < this.nodes.length && compareIds(this.nodes[pos]!.id, op.id) > 0) {
       pos += 1;
     }
 
-    this.nodes.splice(pos, 0, { id: op.id, char: op.char, deleted: false });
-    // Everything from `pos` onwards shifted by one: refresh their positions.
-    for (let i = pos; i < this.nodes.length; i++) {
-      this.index.set(idKey(this.nodes[i]!.id), i);
-    }
+    const node: Node = { id: op.id, char: op.char, deleted: false };
+    this.nodes.splice(pos, 0, node);
+    this.hintPos = pos;
+    this.index.set(idKey(op.id), node);
     this.seen.add(idKey(op.id));
     if (op.id.clock > this.clock) this.clock = op.id.clock;
     return pos;
+  }
+
+  /** Position of `node` in the sequence; tries the last-insert hint first. */
+  private positionOf(node: Node): number {
+    if (this.nodes[this.hintPos] === node) return this.hintPos;
+    return this.nodes.indexOf(node);
   }
 
   /** UTF-16 length of the visible text before node position `pos`. */

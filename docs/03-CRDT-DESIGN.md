@@ -40,13 +40,16 @@ Replica {
   replicaId: string
   clock: number
   nodes: Node[]                  // the sequence, ROOT is implicit at index -1
-  index: Map<idKey, position>    // idKey = clock + "@" + replica
-  pending: Op[]                  // ops waiting for their origin
+  index: Map<idKey, Node>        // idKey = clock + "@" + replica
+  pendingInserts: Map<originKey, InsertOp[]>   // ops waiting for their origin
+  pendingDeletes: Map<targetKey, DeleteOp[]>   // ops waiting for their target
   seen: Set<idKey>               // applied insert ids (for idempotence)
 }
 ```
 
-First version uses an array. Finding the visible index of a node means counting non-deleted nodes before it, which is O(n). That is acceptable for a first version and gets measured in Week 3.
+First version uses an array. Finding the visible index of a node means counting non-deleted nodes before it, which is O(n). That is acceptable for a first version and was measured (see `docs/results/`).
+
+**Implementation note (changed after measuring).** The first draft stored `index: Map<idKey, position>`. Every insert shifted all later positions, so the map had to be rebuilt from the insertion point on (creating a string key per node), which dominated the cost of random inserts. The map now stores the `Node` object and a position is found with `nodes.indexOf(node)`, starting from a self-validating hint (the position of the node inserted last, which makes chains such as a paste or a typed word O(1) per character). The pending buffer is two maps keyed by the missing dependency, so releasing waiting ops is O(1) instead of scanning a list.
 
 ## 5. Operations
 
@@ -134,7 +137,7 @@ Delete T on Rahul's replica: T gets `deleted = true`. Visible text becomes `CASR
 Network order is arbitrary. An insert can arrive before the insert it depends on.
 - Inserts depend on their `origin`.
 - Deletes depend on their `target`.
-- Rule: if the dependency is missing, put the op in `pending`. After each successful integration, scan `pending` for ops whose dependency now exists and apply them, repeating until nothing changes.
+- Rule: if the dependency is missing, park the op in `pendingInserts` (keyed by origin) or `pendingDeletes` (keyed by target). After each successful integration of node X, take the ops parked under X's id and apply them (which may release more), until nothing is waiting on a node that exists. Parked ops are de-duplicated (inserts by id, deletes by `opId`).
 - A pending op that never resolves means a bug or a lost message. Surface the pending count in the debug panel and in metrics.
 
 ## 12. Correctness argument (sketch)
@@ -148,7 +151,7 @@ Together these give convergence. The **property-based tests** in `07-TESTING.md`
 ## 13. Known limitations
 - **Interleaving:** when two users type whole words at the same spot concurrently, RGA can interleave characters at word boundaries in some patterns (a known weakness of simple sequence CRDTs). Document what you observe.
 - **Tombstones are never removed** in the first version. Memory grows with the number of deletes. Measure it in Week 3.
-- **Position lookup is O(n)** in the array version.
+- **Position lookup is O(n)** in the array version (visible offsets are a linear scan; `docs/results/` has measurements).
 - **No rich text** (formatting needs extra rules).
 
 ## 14. Planned optimisations (only after measuring)
