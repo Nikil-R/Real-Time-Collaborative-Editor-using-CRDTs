@@ -1,0 +1,51 @@
+@import "tailwindcss";
+
+:root {
+  --background: #fafaf9;
+  --foreground: #1c1917;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+/* CodeMirror */
+.cm-editor {
+  height: 100%;
+  font-size: 16px;
+  background: white;
+}
+.cm-editor.cm-focused {
+  outline: none;
+}
+.cm-scroller {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  line-height: 1.6;
+}
+.cm-content {
+  padding: 1rem 1.25rem;
+}
+
+/* Remote cursors */
+.cm-peer-caret {
+  position: relative;
+  border-left: 2px solid;
+  margin-left: -1px;
+  margin-right: -1px;
+  pointer-events: none;
+}
+.cm-peer-label {
+  position: absolute;
+  top: -1.35em;
+  left: -2px;
+  padding: 0 4px;
+  font-size: 11px;
+  line-height: 1.35em;
+  color: white;
+  white-space: nowrap;
+  border-radius: 3px 3px 3px 0;
+  pointer-events: none;
+  user-select: none;
+}
