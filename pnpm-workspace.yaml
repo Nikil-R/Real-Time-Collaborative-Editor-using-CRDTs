@@ -1,5 +1,6 @@
 packages:
   - "packages/*"
   - "apps/*"
+  - "loadtest"
 allowBuilds:
   esbuild: true

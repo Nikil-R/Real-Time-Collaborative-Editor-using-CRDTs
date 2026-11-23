@@ -1,0 +1,21 @@
+{
+  "name": "@rce/loadtest",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/run.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@rce/client": "workspace:*",
+    "@rce/crdt": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "tsx": "^4",
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.1"
+  }
+}
