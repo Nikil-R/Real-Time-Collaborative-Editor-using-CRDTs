@@ -41,7 +41,8 @@
 - Exposes: `createReplica(replicaId)`, `localInsert(index, text)`, `localDelete(index, length)`, `applyRemote(op)`, `getText()`, `getState()`, `loadState()`.
 - Details in `03-CRDT-DESIGN.md`.
 
-### 3.2 `apps/web` (React + Vite + CodeMirror 6)
+### 3.2 `apps/web` (Next.js + React + TypeScript + CodeMirror 6)
+Next.js is used as the frontend framework only. All editor, sync and offline code lives in client components (`"use client"`, with the editor loaded via `dynamic(..., { ssr: false })`). There are no Next.js API routes: the backend is FastAPI.
 - **Editor binding:** converts CodeMirror transactions into CRDT local operations, and CRDT remote changes into CodeMirror transactions.
 - **Sync client:** WebSocket connection, reconnect with backoff, resync from the last seen sequence number.
 - **Outbox:** operations created locally are stored in IndexedDB until the server acknowledges them.

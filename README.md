@@ -47,12 +47,14 @@ Real-Time-Collaborative-Editor-using-CRDTs/
 | Layer | Choice | Reason |
 |---|---|---|
 | CRDT core | TypeScript, no dependencies | Runs in the browser, easy to test with fast-check |
-| Editor | React + Vite + CodeMirror 6 | CodeMirror gives clean change objects to convert into operations |
-| Server | Python FastAPI + WebSockets | Matches existing skills |
+| Web app | Next.js (App Router) + React + TypeScript, Tailwind CSS, shadcn/ui, Zustand | Modern frontend stack; editor runs as client components only (no SSR for CodeMirror, IndexedDB, WebSocket) |
+| Editor | CodeMirror 6 | Gives clean change objects to convert into operations |
+| Server | Python FastAPI + WebSockets, Pydantic v2, SQLAlchemy 2 (async), Alembic, uv, Ruff | Matches existing skills, current async stack |
 | Storage | PostgreSQL | Append-only operation log plus snapshots |
 | Scale-out | Redis pub/sub | Share edits between several server processes |
 | Offline | IndexedDB | Queue edits while disconnected |
-| Tests | Vitest, fast-check, pytest, a custom load script | Property-based tests are the key proof of correctness |
+| Tests | Vitest, fast-check, pytest, Playwright (two-browser end-to-end), a custom load script | Property-based tests are the key proof of correctness |
+| Observability | Prometheus + Grafana, structlog | Real latency graphs for the results table |
 | Deploy | Docker Compose locally, AWS EC2 or ECS later | Matches existing AWS experience |
 
 ## Reading order

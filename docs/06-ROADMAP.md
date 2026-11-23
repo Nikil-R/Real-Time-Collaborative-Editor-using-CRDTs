@@ -69,7 +69,7 @@ Convention: commit at the end of every day with a message describing the deliver
 - **Exit check:** two Node scripts using the CRDT package exchange edits through the server and converge.
 
 ### Day 11 - Web app skeleton
-- Vite + React + CodeMirror 6, create or open document by URL.
+- Next.js (App Router) + TypeScript + Tailwind + Zustand + CodeMirror 6, create or open document by URL (`/doc/[id]`).
 - Editor shows text from the CRDT.
 - **Exit check:** typing locally updates the CRDT and the screen.
 
