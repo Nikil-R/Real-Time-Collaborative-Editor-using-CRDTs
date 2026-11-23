@@ -15,9 +15,9 @@ Endpoint: `ws://host/ws/{doc_id}?replica={replica_id}&name={display_name}`
 ### 2.1 `hello`
 Sent first after connecting.
 ```json
-{ "type": "hello", "last_seq": 1204, "replica": "r-8f2c", "name": "Priya", "color": "#e57373" }
+{ "type": "hello", "v": 1, "last_seq": 1204, "replica": "r-8f2c", "name": "Priya", "color": "#e57373" }
 ```
-`last_seq` is the highest `seq` the client has applied (0 for a new client).
+`last_seq` is the highest `seq` the client has applied (0 for a new client). `v` must be `1`. `replica` must not already be connected to this document (on any server process): otherwise the server replies with `REPLICA_IN_USE` and closes. A browser must therefore use one replica id **per tab**, not per profile (see section 6).
 
 ### 2.2 `ops`
 A batch of operations created locally.
@@ -40,7 +40,20 @@ Cursor and selection, sent at most every 50 ms and only when changed.
 ```
 Anchor and head are character IDs, or `null` for "start of document". Presence is **not** stored in the database.
 
-### 2.4 `ping`
+### 2.4 `snapshot` (v1.1, additive)
+A client uploads its serialised CRDT state so new clients can load it instead of replaying the whole log (see `05-DATABASE.md` section 5).
+```json
+{ "type": "snapshot", "up_to_seq": 1260, "state": { "...": "output of Replica.getState()" } }
+```
+The server stores it only if `up_to_seq` is at most the document's `last_seq` and newer than the stored snapshot. No reply.
+
+### 2.5 `sync` (v1.1, additive)
+Ask for the next page of operations after `last_seq` (used when `welcome.more` or `catchup.more` is true).
+```json
+{ "type": "sync", "last_seq": 5000 }
+```
+
+### 2.6 `ping`
 ```json
 { "type": "ping", "t": 1732352000000 }
 ```
@@ -54,12 +67,19 @@ Reply to `hello`.
   "type": "welcome",
   "doc_id": "…",
   "snapshot": null,
-  "ops_since": [ /* ops with seq > last_seq, each includes "seq" */ ],
+  "ops_since": [ /* first page: ops with seq > last_seq (or > snapshot.up_to_seq), each includes "seq" */ ],
+  "more": false,
   "head_seq": 1260,
   "peers": [ { "replica": "r-1a3b", "name": "Rahul", "color": "#64b5f6" } ]
 }
 ```
-If `last_seq` is older than the oldest retained operation (because of compaction), `snapshot` contains the document state and `ops_since` contains only operations after the snapshot.
+`snapshot` is sent when a snapshot newer than `last_seq` exists and either the client is new (`last_seq` is 0) or its `last_seq` is older than the oldest retained operation (because of compaction). `ops_since` then contains only operations after the snapshot. `ops_since` holds at most one page (default 5000 operations); when `more` is true the client sends `sync` until it receives `more: false`.
+
+### 3.1b `catchup` (v1.1, additive)
+Reply to `sync`.
+```json
+{ "type": "catchup", "ops": [ ... ], "more": true, "head_seq": 12000 }
+```
 
 ### 3.2 `ack`
 Confirms a batch is stored.
@@ -94,7 +114,7 @@ Operations from other clients. Same op shape as the client message, plus `seq`.
 ```json
 { "type": "error", "code": "BAD_MESSAGE", "message": "ops batch too large" }
 ```
-Codes: `BAD_MESSAGE`, `TOO_LARGE`, `RATE_LIMITED`, `DOC_NOT_FOUND`, `INTERNAL`.
+Codes: `BAD_MESSAGE`, `TOO_LARGE`, `RATE_LIMITED`, `DOC_NOT_FOUND`, `REPLICA_IN_USE`, `INTERNAL`. `DOC_NOT_FOUND` and `REPLICA_IN_USE` close the connection; the others leave it open. A batch refused with `RATE_LIMITED` or `INTERNAL` is not stored and not acknowledged: the client keeps it in its outbox and retries.
 
 ## 4. Sync rules
 
@@ -113,6 +133,11 @@ Codes: `BAD_MESSAGE`, `TOO_LARGE`, `RATE_LIMITED`, `DOC_NOT_FOUND`, `INTERNAL`.
 - Every process subscribed to that channel forwards the message to its local clients except the sender.
 - The database is the source of truth. If Redis drops a message, a client will catch up from `last_seq` the next time it reconnects, and the server can also send a "resync" hint when it detects a gap.
 
-## 6. Versioning
+## 6. Replica ids
+- `replica_id` is the identity inside every character id. Two live editors sharing one id would create different characters with the same id and diverge, so an id must belong to exactly one live editor.
+- The web app generates one id per **tab** (kept in `sessionStorage` so a reload keeps the same id and its IndexedDB outbox) and guards it with a Web Lock; a duplicated tab detects the clash and takes a new id. The server enforces the same rule with `REPLICA_IN_USE`.
+
+## 7. Versioning
 - First message after connect includes `"v": 1` in `hello`. The server rejects unknown versions with `BAD_MESSAGE`.
-- Any change to message shapes bumps the version and updates this document in the same commit.
+- Additive messages (v1.1: `snapshot`, `sync`, `catchup`, `more`, `REPLICA_IN_USE`) keep `v: 1`; a message that changes the meaning of an existing field bumps `v`. Update this document in the same commit as any change.
+- A `ops` message may carry presence-free CRDT operations only; the server validates shape (`op_id`, `kind`, and the fields each kind needs) and stores the rest untouched.
