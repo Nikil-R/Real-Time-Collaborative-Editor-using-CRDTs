@@ -33,6 +33,18 @@ def span(values: list[float], digits: int = 0) -> str:
     return fmt.format(lo) if round(lo, digits) == round(hi, digits) else f"{fmt.format(lo)} to {fmt.format(hi)}"
 
 
+def verdict(reps: list[dict]) -> str:
+    passed = sum(1 for r in reps if r["passed"])
+    if passed == len(reps):
+        return "all passed"
+    stored = [100 * r["opsStoredByServer"] / r["opsGenerated"] for r in reps if not r["passed"]]
+    lead = "none passed" if passed == 0 else f"{passed}/{len(reps)} passed"
+    return (
+        f"{lead}; the server had stored "
+        f"{min(stored):.0f}% to {max(stored):.0f}% of the operations when the 120 s settle window ended"
+    )
+
+
 def load_table(prefix: str, label: str) -> list[str]:
     rows = []
     for clients in (10, 50, 100):
@@ -45,7 +57,7 @@ def load_table(prefix: str, label: str) -> list[str]:
             "| {c} | {n} | {ok} | {ops} | {tp} | {p50} | {p95} | {p99} | {db} |".format(
                 c=clients,
                 n=len(reps),
-                ok="all passed" if all(r["passed"] for r in reps) else "FAILED: see report",
+                ok=verdict(reps),
                 ops=span([r["opsGenerated"] for r in reps]),
                 tp=span([r["throughputOpsPerSec"] for r in reps], 1),
                 p50=span([r["latencyMs"]["p50"] for r in reps]),
@@ -80,6 +92,8 @@ def main() -> None:
         ]
 
     out += load_table("load", "Load test: random typing (5 characters per second per client, 30 s) into one document") or []
+    out.append("")
+    out.append("A run **passes** only if, after typing stops and faults end, every replica holds identical text, the server stored every operation that was generated, and a fresh client replaying the log gets the same text. A run that fails because the server is still working through a backlog is **saturation, not divergence**: the single-process server on a SQLite file, with all simulated clients on the same 4-thread laptop, could not keep up with the offered load. No claim is made that 100 clients converge.")
     out.append("")
     out.append("Latency is measured from the moment a client creates an operation to the moment another client's session receives it from the server (same process clock), so it includes the client's 30 ms batching window and the database write.")
     out.append("")

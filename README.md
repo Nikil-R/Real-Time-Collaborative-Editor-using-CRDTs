@@ -4,7 +4,7 @@ A real-time collaborative text editor where many people type in the same documen
 
 **Author:** Nikil R
 
-> **Status (2026-11-23):** implemented and tested on a development machine. The CRDT, sync client, FastAPI server, Next.js app, load and chaos tests and the Yjs comparison are done and measured. Not done or not verified: the PostgreSQL and Redis variants of the server tests and the Docker/CI files were written but **not run** (neither was available on the development machine); there is no demo GIF and no live deployment yet. See [Limitations](#honest-limitations).
+> **Status (2026-11-23):** implemented and tested on a development machine. The CRDT, sync client, FastAPI server, Next.js app, load and chaos tests and the Yjs comparison are done and measured. The server tests pass on SQLite and on real PostgreSQL 18 with Redis 5. Not done or not verified: the Docker files could not be built locally (no Docker; CI builds them), there is no demo GIF and no live deployment yet. See [Limitations](#honest-limitations).
 
 ## The one-paragraph explanation
 
@@ -69,11 +69,49 @@ With Docker (written, not yet run on the development machine): `docker compose u
 | Sync client (against an in-memory fake server, with chaos runs) | `pnpm test:client` |
 | Web unit tests | `pnpm test:web` |
 | Server (SQLite and fake Redis) | `cd server; uv run pytest` |
-| Server against real PostgreSQL and Redis | set `TEST_DATABASE_URL` and `TEST_REDIS_URL`, then `uv run pytest` |
+| Server against real PostgreSQL and Redis | set `TEST_DATABASE_URL` (e.g. `postgresql+asyncpg://user:pw@localhost:5432/collab_editor_test`) and `TEST_REDIS_URL`, then `uv run pytest` |
 | End-to-end, real browsers (Edge by default, `PW_CHANNEL=chromium` elsewhere) | `pnpm e2e` |
 | Load test (10, 50, 100 clients), chaos run | `pnpm loadtest -- --clients 50 --duration 30 --spawn-server` (`--chaos` adds faults) |
 
 <!-- RESULTS:START -->
+
+## Results
+
+All numbers below were produced on 2026-11-23 on one machine (11th Gen Intel Core i3-1115G4, 7.8 GB RAM, Windows 11, Node 24) with clients and server on the same machine and the server on a **SQLite file, not PostgreSQL**. Each line links to a report in [`docs/results/`](docs/results/) that records the exact command. Treat them as demo-scale, relative numbers.
+
+**Convergence (property-based fuzzing, 0 divergences).** 2 to 6 replicas, random edits, delivery order, delays and duplicates; after delivery every replica must show identical text, equal to the surviving characters. Details and the sanity check that the tests can fail: [`crdt-convergence`](docs/results/2026-11-23-crdt-convergence.md).
+
+**Load test: random typing (5 characters per second per client, 30 s) into one document**
+
+| Clients | Runs | Verdict | Ops generated | Stored ops/s | p50 ms | p95 ms | p99 ms | DB write ms (avg per batch) |
+|---|---|---|---|---|---|---|---|---|
+| 10 | 3 | all passed | 1,428 to 1,431 | 47.6 to 47.7 | 46 to 51 | 67 to 73 | 90 to 105 | 11.4 to 13.6 |
+| 50 | 3 | all passed | 7,355 to 7,497 | 245.2 to 249.9 | 1,903 to 4,681 | 8,201 to 12,456 | 8,323 to 14,065 | 21.4 to 28.9 |
+| 100 | 3 | none passed; the server had stored 78% to 89% of the operations when the 120 s settle window ended | 14,577 to 14,833 | 379.8 to 441.5 | 8,555 to 8,706 | 20,878 to 21,186 | 22,552 to 22,960 | 111.8 to 183.2 |
+
+A run **passes** only if, after typing stops and faults end, every replica holds identical text, the server stored every operation that was generated, and a fresh client replaying the log gets the same text. A run that fails because the server is still working through a backlog is **saturation, not divergence**: the single-process server on a SQLite file, with all simulated clients on the same 4-thread laptop, could not keep up with the offered load. No claim is made that 100 clients converge.
+
+Latency is measured from the moment a client creates an operation to the moment another client's session receives it from the server (same process clock), so it includes the client's 30 ms batching window and the database write.
+
+**Chaos run** (20 clients, 30 s of typing with random disconnects, 1 to 10 s offline periods, delayed, duplicated and reordered messages, and one server restart mid-run):
+
+- verdict: passed; operations generated 2913, stored by the server 2913 (missing: 0)
+- distinct final texts across all replicas: 1; a fresh client replaying the log matches: True
+- faults injected: 62 dropped connections, 3403 delayed and 1774 duplicated messages; server restarted: True; time to settle after faults stopped: 1.6 s
+- latency during chaos is dominated by offline periods (p50 613 ms, p99 16,135 ms) and is not a performance figure
+
+**Own CRDT versus Yjs** (same seeded synthetic trace, one run, results checked against a plain-string model; [details](docs/results/2026-11-23-yjs-comparison.md)):
+
+| Edits in the trace | 10,000 | 50,000 |
+|---|---|---|
+| Local apply, own / Yjs (ms) | 200 / 225 | 7,075 / 949 |
+| Replay on a fresh replica, own / Yjs incremental (ms) | 333 / 107 | 9,751 / 439 |
+| Size: own operations as JSON / Yjs merged update (bytes) | 1,885,112 / 76,828 | 9,661,410 / 415,296 |
+
+Own implementation is slower and larger than Yjs, as expected for a first version; the gap widens with document size.
+
+**CRDT optimisation:** 30,000 random single-character inserts took 139.1 s before and 1.6 s after indexing nodes by reference (idle-machine run, one run each). Deletes and in-order remote apply did not improve. Run-to-run noise on this laptop was large, see [`crdt-optimisation`](docs/results/2026-11-23-crdt-optimisation.md).
+
 <!-- RESULTS:END -->
 
 ## Repository layout
@@ -108,7 +146,8 @@ docs/               design, protocol, database, testing, deployment, results, le
 - **Tombstones are never garbage collected**; memory and state size grow with deletes.
 - **Interleaving:** concurrent typing of whole words at one spot can interleave characters (a known weakness of simple sequence CRDTs).
 - **Measured on SQLite on one laptop**, with clients and server on the same machine. The results below say what that means; they are not production numbers.
-- **Not run here:** real PostgreSQL and Redis, Docker, the GitHub Actions workflow.
+- **Not run locally:** Docker (images and Compose stack) because Docker is not installed on the development machine; the GitHub Actions workflow is the first place they are built.
+- **The 100-client load scenario does not pass**: one Python process on a SQLite file, sharing a 4-thread laptop with 100 simulated clients, falls behind (see results).
 - No demo GIF and no live deployment yet. "Demo-scale, tested with simulated clients" is the accurate description, not "production-ready".
 
 ## Documentation

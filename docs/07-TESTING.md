@@ -6,7 +6,7 @@ The project's credibility rests on tests that prove convergence. Demos are not p
 - `packages/crdt`: 62 Vitest tests, including 6 property tests over random multi-replica schedules (`pnpm test:crdt`; `FC_RUNS` sets the schedules per property, `pnpm test:crdt:full` uses 10,000).
 - `packages/client`: 29 tests against an in-memory fake server, including 8 seeded chaos runs.
 - `apps/web`: 10 unit tests (editor binding, IndexedDB store) and 9 Playwright tests.
-- `server`: 37 pytest tests (repository, protocol, relay, fan-out, compaction) on SQLite and fakeredis.
+- `server`: 39 pytest tests (repository, protocol, relay, fan-out, compaction). They pass on SQLite with fakeredis and on PostgreSQL 18 with Redis 5.0 (`TEST_DATABASE_URL`, `TEST_REDIS_URL`).
 - `loadtest`: 3 unit tests for the statistics, plus the load and chaos runner.
 
 ## 1. Test layers
@@ -116,7 +116,7 @@ Pass condition: after faults stop and everyone reconnects, **all replicas conver
 ## 9. CI
 - `.github/workflows/ci.yml`: typecheck, unit and property tests (2,000 schedules per property on push), client tests, web unit tests and build, server lint and tests on SQLite, then again against PostgreSQL and Redis service containers (`TEST_DATABASE_URL`, `TEST_REDIS_URL`), Playwright, and a Docker build.
 - Nightly (cron): the CRDT suite with 100,000 schedules per property, and a 20-client load run plus a chaos run.
-- The workflow has not been executed yet (the repository had no remote CI run at the time of writing); the same commands were run locally except the PostgreSQL/Redis server tests and the Docker build.
+- Locally every command in the workflow was run except the Docker build; see the status of the first GitHub Actions run in the README.
 
 ## 10. Test data hygiene
 - Seeds are logged on every failure.

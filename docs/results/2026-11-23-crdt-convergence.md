@@ -30,3 +30,12 @@ was reverted. Reversing the skip comparison also failed immediately.
 ## Limits of this evidence
 - Fuzzing is empirical, not a formal proof (see `03-CRDT-DESIGN.md` section 12).
 - The simulator uses small alphabets and short documents on purpose, to force collisions.
+
+## Re-runs after the optimisations (same day)
+The position-index change and position hint were made after the table above, so the suite was
+run again against the final code.
+
+| Runs per property | Result | Wall time |
+|---|---|---|
+| 10,000 | all 62 tests pass | 5.4 s (machine otherwise idle) |
+| 100,000 | all 62 tests pass | 307.6 s: **not comparable**, other jobs (server tests, a load smoke test) were running on the machine at the same time |
