@@ -1,0 +1,40 @@
+[project]
+name = "collab-server"
+version = "0.1.0"
+description = "Relay and storage server for the Real-Time Collaborative Editor using CRDTs"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi>=0.115",
+  "uvicorn[standard]>=0.30",
+  "pydantic>=2.7",
+  "pydantic-settings>=2.3",
+  "sqlalchemy[asyncio]>=2.0.30",
+  "asyncpg>=0.29",
+  "aiosqlite>=0.20",
+  "alembic>=1.13",
+  "redis>=5.0",
+  "structlog>=24.1",
+  "prometheus-client>=0.20",
+]
+
+[dependency-groups]
+dev = [
+  "pytest>=8",
+  "pytest-asyncio>=0.23",
+  "httpx>=0.27",
+  "websockets>=12",
+  "fakeredis>=2.23",
+  "ruff>=0.5",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "ASYNC"]

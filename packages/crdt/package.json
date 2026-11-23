@@ -9,11 +9,13 @@
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
+    "bench": "node --expose-gc node_modules/tsx/dist/cli.mjs bench/baseline.ts",
     "test:full": "node scripts/full-run.mjs 10000",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
     "fast-check": "^4.11.0",
+    "tsx": "^4.23.15",
     "typescript": "^7.0.2",
     "vitest": "^5.1.1"
   }
