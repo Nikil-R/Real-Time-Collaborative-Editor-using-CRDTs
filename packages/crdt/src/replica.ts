@@ -3,21 +3,33 @@ import {
   compareIds,
   idEquals,
   idKey,
+  opIdKey,
+  type Change,
   type CharId,
   type DeleteOp,
   type InsertOp,
   type Node,
+  type Op,
 } from "./types";
+
+/** Serialised replica state (design: getState / fromState). JSON-safe. */
+export interface SerializedState {
+  readonly v: 1;
+  readonly replicaId: string;
+  readonly clock: number;
+  readonly opCounter: number;
+  /** [clock, replica, char, deleted(0|1)] per node, in sequence order. */
+  readonly nodes: ReadonlyArray<readonly [number, string, string, 0 | 1]>;
+  /** Operations still waiting for their origin or target. */
+  readonly pending: ReadonlyArray<Op>;
+}
 
 /**
  * One copy of the document (design section 4).
  *
- * Day 1 scope: local edits only (`localInsert`, `localDelete`, `getText`).
- * Remote apply, the pending buffer and cursor helpers arrive on Days 2-5.
- *
- * All indexes passed in are visible-text positions in UTF-16 code units, the
- * same unit JavaScript strings and CodeMirror use. An index that would fall
- * in the middle of a surrogate pair throws a RangeError.
+ * All indexes passed in or returned are visible-text positions in UTF-16 code
+ * units, the same unit JavaScript strings and CodeMirror use. An index that
+ * would fall in the middle of a surrogate pair throws a RangeError.
  */
 export class Replica {
   readonly replicaId: string;
@@ -31,6 +43,12 @@ export class Replica {
   private index = new Map<string, number>();
   /** Ids of every applied insert (idempotence). */
   private seen = new Set<string>();
+  /** Inserts waiting for their origin, keyed by the origin's idKey. */
+  private pendingInserts = new Map<string, InsertOp[]>();
+  private pendingInsertKeys = new Set<string>();
+  /** Deletes waiting for their target, keyed by the target's idKey. */
+  private pendingDeletes = new Map<string, DeleteOp[]>();
+  private pendingDeleteKeys = new Set<string>();
 
   constructor(replicaId: string) {
     if (replicaId === "") {
@@ -39,6 +57,8 @@ export class Replica {
     }
     this.replicaId = replicaId;
   }
+
+  // ---------------------------------------------------------------- reading
 
   /** Visible text: every node that is not a tombstone. */
   getText(): string {
@@ -49,6 +69,37 @@ export class Replica {
     return out;
   }
 
+  /** Length of the visible text in UTF-16 code units. */
+  get length(): number {
+    let n = 0;
+    for (const node of this.nodes) {
+      if (!node.deleted) n += node.char.length;
+    }
+    return n;
+  }
+
+  /** Number of nodes including tombstones. */
+  get nodeCount(): number {
+    return this.nodes.length;
+  }
+
+  /** Number of operations parked while waiting for a dependency. */
+  get pendingCount(): number {
+    return this.pendingInsertKeys.size + this.pendingDeleteKeys.size;
+  }
+
+  /** Current Lamport clock (for tests and the debug panel). */
+  get currentClock(): number {
+    return this.clock;
+  }
+
+  /** Copy of the sequence for the debug panel and tests. */
+  debugNodes(): Array<{ id: CharId; char: string; deleted: boolean }> {
+    return this.nodes.map((n) => ({ id: n.id, char: n.char, deleted: n.deleted }));
+  }
+
+  // ------------------------------------------------------------ local edits
+
   /**
    * Type `text` at visible index `index`. Returns the operations to send.
    * Each character becomes one InsertOp whose origin is the previous one
@@ -56,9 +107,8 @@ export class Replica {
    */
   localInsert(index: number, text: string): InsertOp[] {
     const chars = Array.from(normalizeNewlines(text)); // one entry per code point
-    const originId = this.originForVisibleIndex(index);
+    let origin = this.idAtIndex(index);
     const ops: InsertOp[] = [];
-    let origin = originId;
     for (const char of chars) {
       this.clock += 1;
       const op: InsertOp = {
@@ -67,7 +117,7 @@ export class Replica {
         origin,
         char,
       };
-      this.integrate(op);
+      this.insertNode(op);
       ops.push(op);
       origin = op.id;
     }
@@ -115,11 +165,98 @@ export class Replica {
     return ops;
   }
 
+  // ----------------------------------------------------------- remote edits
+
   /**
-   * The id a new character typed at visible `index` must use as its origin:
-   * the last visible node ending exactly at `index`, or ROOT for index 0.
+   * Apply operations received from elsewhere, in any order, with duplicates.
+   * Operations whose dependency (origin or target) is missing are parked and
+   * applied automatically once it arrives (design section 11).
+   *
+   * Returns the visible-text changes, in application order, for the editor.
    */
-  private originForVisibleIndex(index: number): CharId {
+  applyRemote(ops: readonly Op[]): Change[] {
+    const changes: Change[] = [];
+    const queue: Op[] = [...ops];
+    for (let i = 0; i < queue.length; i++) {
+      const op = queue[i]!;
+      if (op.type === "ins") {
+        this.applyRemoteInsert(op, queue, changes);
+      } else {
+        this.applyRemoteDelete(op, changes);
+      }
+    }
+    return changes;
+  }
+
+  private applyRemoteInsert(op: InsertOp, queue: Op[], changes: Change[]): void {
+    const key = idKey(op.id);
+    if (this.seen.has(key)) return; // duplicate: idempotent
+    if (!idEquals(op.origin, ROOT) && !this.index.has(idKey(op.origin))) {
+      this.parkInsert(op);
+      return;
+    }
+    // If this op was parked earlier it is being released now (it was already
+    // removed from the by-origin map when its origin was integrated).
+    this.pendingInsertKeys.delete(key);
+    const pos = this.insertNode(op);
+    const at = this.visibleOffsetBefore(pos);
+    pushChange(changes, { from: at, to: at, insert: op.char });
+    // Anything that was waiting for this character can go now.
+    const waitingInserts = this.pendingInserts.get(key);
+    if (waitingInserts) {
+      this.pendingInserts.delete(key);
+      queue.push(...waitingInserts);
+    }
+    const waitingDeletes = this.pendingDeletes.get(key);
+    if (waitingDeletes) {
+      this.pendingDeletes.delete(key);
+      for (const d of waitingDeletes) this.pendingDeleteKeys.delete(opIdKey(d.opId));
+      queue.push(...waitingDeletes);
+    }
+  }
+
+  private applyRemoteDelete(op: DeleteOp, changes: Change[]): void {
+    const targetKey = idKey(op.target);
+    const pos = this.index.get(targetKey);
+    if (pos === undefined) {
+      this.parkDelete(op);
+      return;
+    }
+    const node = this.nodes[pos]!;
+    if (node.deleted) return; // duplicate or already deleted: nothing to do
+    const from = this.visibleOffsetBefore(pos);
+    node.deleted = true;
+    pushChange(changes, { from, to: from + node.char.length, insert: "" });
+  }
+
+  private parkInsert(op: InsertOp): void {
+    const key = idKey(op.id);
+    if (this.pendingInsertKeys.has(key)) return;
+    this.pendingInsertKeys.add(key);
+    const originKey = idKey(op.origin);
+    const list = this.pendingInserts.get(originKey);
+    if (list) list.push(op);
+    else this.pendingInserts.set(originKey, [op]);
+  }
+
+  private parkDelete(op: DeleteOp): void {
+    const key = opIdKey(op.opId);
+    if (this.pendingDeleteKeys.has(key)) return;
+    this.pendingDeleteKeys.add(key);
+    const targetKey = idKey(op.target);
+    const list = this.pendingDeletes.get(targetKey);
+    if (list) list.push(op);
+    else this.pendingDeletes.set(targetKey, [op]);
+  }
+
+  // ----------------------------------------------------------------- cursors
+
+  /**
+   * Cursor helper. For a cursor sitting at visible `index`, returns the id of
+   * the character immediately to its left (ROOT at index 0). Storing this id
+   * instead of the number keeps the cursor attached when others edit.
+   */
+  idAtIndex(index: number): CharId {
     assertNonNegativeInteger(index, "index");
     if (index === 0) return ROOT;
     let offset = 0;
@@ -135,23 +272,73 @@ export class Replica {
   }
 
   /**
-   * The RGA ordering rule (design section 7): start right after the origin and
-   * move right past every node with a larger id, then insert.
-   *
-   * Day 1 only calls this for local inserts, whose origin always exists.
-   * Missing-origin handling (the pending buffer) is added on Day 3.
+   * Inverse of `idAtIndex`: the visible index of a cursor placed right after
+   * the character `id`. If that character was deleted, the cursor sits where
+   * it used to be. ROOT gives 0. Returns -1 for an id this replica has not seen.
    */
-  private integrate(op: InsertOp): void {
-    const key = idKey(op.id);
-    if (this.seen.has(key)) return; // idempotent
+  indexOfId(id: CharId): number {
+    if (idEquals(id, ROOT)) return 0;
+    const pos = this.index.get(idKey(id));
+    if (pos === undefined) return -1;
+    return this.visibleOffsetBefore(pos + 1);
+  }
 
+  // ------------------------------------------------------------------ state
+
+  getState(): SerializedState {
+    const pending: Op[] = [];
+    for (const list of this.pendingInserts.values()) pending.push(...list);
+    for (const list of this.pendingDeletes.values()) pending.push(...list);
+    return {
+      v: 1,
+      replicaId: this.replicaId,
+      clock: this.clock,
+      opCounter: this.opCounter,
+      nodes: this.nodes.map((n) => [n.id.clock, n.id.replica, n.char, n.deleted ? 1 : 0] as const),
+      pending,
+    };
+  }
+
+  /**
+   * Rebuild a replica from `getState()` output. If `replicaId` equals the one
+   * stored in the state, its delete counter continues where it stopped;
+   * otherwise a fresh replica starts from the same document.
+   */
+  static fromState(state: SerializedState, replicaId: string): Replica {
+    if (state.v !== 1) throw new Error(`unsupported state version ${String(state.v)}`);
+    const r = new Replica(replicaId);
+    r.clock = state.clock;
+    if (replicaId === state.replicaId) r.opCounter = state.opCounter;
+    for (const [clock, replica, char, deleted] of state.nodes) {
+      const id: CharId = { clock, replica };
+      const key = idKey(id);
+      r.index.set(key, r.nodes.length);
+      r.seen.add(key);
+      r.nodes.push({ id, char, deleted: deleted === 1 });
+    }
+    for (const op of state.pending) {
+      if (op.type === "ins") r.parkInsert(op);
+      else r.parkDelete(op);
+    }
+    return r;
+  }
+
+  // -------------------------------------------------------------- internals
+
+  /**
+   * The RGA ordering rule (design section 7): start right after the origin and
+   * move right past every node with a larger id, then insert. The caller has
+   * checked that the origin exists and that `op` is not a duplicate.
+   * Returns the position the node was inserted at.
+   */
+  private insertNode(op: InsertOp): number {
     let pos: number;
     if (idEquals(op.origin, ROOT)) {
       pos = 0;
     } else {
       const originPos = this.index.get(idKey(op.origin));
       if (originPos === undefined) {
-        throw new Error(`origin ${idKey(op.origin)} not found (pending buffer arrives on Day 3)`);
+        throw new Error(`origin ${idKey(op.origin)} not found`);
       }
       pos = originPos + 1;
     }
@@ -165,13 +352,19 @@ export class Replica {
     for (let i = pos; i < this.nodes.length; i++) {
       this.index.set(idKey(this.nodes[i]!.id), i);
     }
-    this.seen.add(key);
+    this.seen.add(idKey(op.id));
     if (op.id.clock > this.clock) this.clock = op.id.clock;
+    return pos;
   }
 
-  /** Test and debug helper: the number of nodes including tombstones. */
-  get nodeCount(): number {
-    return this.nodes.length;
+  /** UTF-16 length of the visible text before node position `pos`. */
+  private visibleOffsetBefore(pos: number): number {
+    let offset = 0;
+    for (let i = 0; i < pos; i++) {
+      const n = this.nodes[i]!;
+      if (!n.deleted) offset += n.char.length;
+    }
+    return offset;
   }
 }
 
@@ -184,4 +377,17 @@ function assertNonNegativeInteger(value: number, name: string): void {
   if (!Number.isInteger(value) || value < 0) {
     throw new RangeError(`${name} must be a non-negative integer, got ${value}`);
   }
+}
+
+/** Append a change, merging it into the previous one when they are adjacent. */
+function pushChange(changes: Change[], next: Change): void {
+  const prev = changes[changes.length - 1];
+  if (prev && prev.insert !== "" && prev.from === prev.to && next.insert !== "" && next.from === next.to) {
+    // Both pure inserts; merge when `next` lands right after `prev`'s text.
+    if (next.from === prev.from + prev.insert.length) {
+      changes[changes.length - 1] = { from: prev.from, to: prev.to, insert: prev.insert + next.insert };
+      return;
+    }
+  }
+  changes.push(next);
 }

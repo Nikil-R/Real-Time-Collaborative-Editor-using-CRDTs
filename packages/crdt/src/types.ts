@@ -43,6 +43,17 @@ export interface Node {
 }
 
 /**
+ * A change to the visible text, in the coordinates of the text as it is just
+ * before this change is applied. Apply a list of them in order. Matches the
+ * shape CodeMirror 6 accepts for `view.dispatch({ changes })`.
+ */
+export interface Change {
+  readonly from: number;
+  readonly to: number;
+  readonly insert: string;
+}
+
+/**
  * Total order on ids (design section 3):
  * 1. higher clock is greater;
  * 2. equal clocks: higher replica string is greater (plain string comparison).
@@ -61,4 +72,9 @@ export function idEquals(a: CharId, b: CharId): boolean {
 /** Map key for an id: clock + "@" + replica. */
 export function idKey(id: CharId): string {
   return `${id.clock}@${id.replica}`;
+}
+
+/** Map key for a delete operation id. */
+export function opIdKey(id: OpId): string {
+  return `${id.replica}#${id.counter}`;
 }
