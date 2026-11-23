@@ -162,3 +162,38 @@ async def test_compaction_keeps_the_safety_window(oplog: OperationLog) -> None:
     async with oplog.session_factory() as session:
         count = await session.scalar(select(func.count()).select_from(Operation))
         assert count == 10
+
+
+async def test_grouped_requests_each_get_their_own_result(oplog: OperationLog) -> None:
+    doc = await oplog.create_document()
+    shared = ins("a", 1, 1)
+    batches = [[shared, ins("a", i, i)] for i in range(2, 8)]
+    results = await asyncio.gather(*(oplog.append_batch(doc.id, b) for b in batches))
+
+    stored = await oplog.ops_since(doc.id, 0, 100)
+    assert [o.seq for o in stored] == list(range(1, 8))  # 7 distinct ops, gap-free
+    seq_by_n = {o.payload["op_id"]["n"]: o.seq for o in stored}
+    owners = [r for r in results if any(o.payload["op_id"]["n"] == 1 for o in r.new_ops)]
+    assert len(owners) == 1  # the shared op is stored and broadcast exactly once
+    for result, batch in zip(results, batches, strict=True):
+        assert result.seqs == [seq_by_n[o["op_id"]["n"]] for o in batch]
+        assert result.max_seq == max(result.seqs)
+        assert len(result.new_ops) + result.duplicates == len(batch)
+
+
+async def test_one_bad_request_does_not_fail_the_others_in_its_group(
+    oplog: OperationLog,
+) -> None:
+    doc = await oplog.create_document()
+    bad = ins("b", 1, 1)
+    bad["unserialisable"] = {1, 2}
+    outcomes = await asyncio.gather(
+        oplog.append_batch(doc.id, [ins("a", 1, 1)]),
+        oplog.append_batch(doc.id, [bad]),
+        oplog.append_batch(doc.id, [ins("a", 2, 2)]),
+        return_exceptions=True,
+    )
+    assert not isinstance(outcomes[0], Exception)
+    assert isinstance(outcomes[1], Exception)
+    assert not isinstance(outcomes[2], Exception)
+    assert [o.seq for o in await oplog.ops_since(doc.id, 0, 10)] == [1, 2]

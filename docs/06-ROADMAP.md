@@ -1,8 +1,24 @@
-# 06 - Roadmap (day by day)
+# 06 - Roadmap
 
-Total: 21 working days plus 3 buffer days. Each day has a **deliverable** and an **exit check**. Do not move on until the exit check passes.
+The plan below was written as a 21-day schedule. It was executed in one pass instead, with one commit per feature; the "Day" headings are kept only as a checklist of deliverables and exit checks.
 
-Convention: commit at the end of every day with a message describing the deliverable.
+## Status (see `git log` for the order things landed)
+
+| Area | State |
+|---|---|
+| CRDT core (insert, delete, remote apply, pending buffer, cursors, state, wire codec) | Done. Property tests pass at 10,000 and 100,000 schedules per property (`docs/results/2026-11-23-crdt-convergence.md`). |
+| Performance baseline and one optimisation | Done, measured (`docs/results/2026-11-23-crdt-optimisation.md`). Deletes and in-order remote apply are still linear. |
+| Server skeleton, operation log, broadcast, snapshots, compaction | Done and tested on SQLite. Tests for real PostgreSQL and Redis are written but have **not been run** (none installed on the development machine); CI runs them. |
+| Next.js app, sync client, offline outbox, presence, debug panel | Done. 9 Playwright tests pass in Edge. |
+| Redis multi-process fan-out | Done, tested with two server instances and a fake Redis. |
+| Load and chaos tests | Done, results in `docs/results/` (SQLite, same machine). |
+| Yjs comparison | Done (`docs/results/2026-11-23-yjs-comparison.md`). Own implementation is slower and larger, as expected. |
+| Docker Compose, Prometheus, Grafana, Caddy, CI | Written, **not run locally** (no Docker installed). |
+| Demo GIF and architecture picture in the README | Not done. |
+| Live deployment | Not done. |
+| Stretch: tombstone GC, rich text, server-side snapshot builder, run-length encoding | Not done. |
+
+Original convention: each deliverable has an **exit check**; do not move on until it passes.
 
 ---
 

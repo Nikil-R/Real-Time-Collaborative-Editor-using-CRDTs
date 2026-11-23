@@ -63,3 +63,15 @@
 **Interleaving:** A weakness where two people typing words at the same place can end up with their letters mixed together.
 
 **p50 / p95 / p99 latency:** The time that 50, 95 or 99 percent of requests finish within. p99 shows the slow tail.
+
+**Outbox:** The list of operations a client has created but the server has not yet acknowledged. It is saved in the browser (IndexedDB) before sending, so offline typing survives a reload.
+
+**Watermark (contiguous seq):** The largest sequence number `S` such that the client has received every operation numbered 1 to `S`. It is the only safe value to send as `last_seq` when reconnecting, because broadcasts can arrive out of order.
+
+**Gap-free seq:** The server numbers stored operations 1, 2, 3 with no skipped numbers, so a client can tell that it missed something by spotting a hole.
+
+**Snapshot:** A saved copy of the whole CRDT state at some sequence number, uploaded by a client. A new client loads it instead of replaying the whole log.
+
+**Compaction:** Deleting old operations that a snapshot already covers (keeping a safety window of recent ones).
+
+**Replica id:** The identity of one live editor, part of every character id. Two live editors must never share one.

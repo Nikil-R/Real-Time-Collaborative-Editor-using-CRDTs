@@ -6,11 +6,7 @@ settings:
 
 importers:
 
-  .:
-    devDependencies:
-      '@types/node':
-        specifier: ^26.6.6
-        version: 26.6.6
+  .: {}
 
   apps/web:
     dependencies:

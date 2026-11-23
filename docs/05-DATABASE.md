@@ -73,6 +73,9 @@ Alternative (stretch): a Python port of the CRDT on the server builds snapshots.
 - A client whose `last_seq` is older than the retained range receives `snapshot` in `welcome` (see protocol).
 - Tombstone garbage collection is a separate, harder step and is explicitly optional (see `03-CRDT-DESIGN.md` section 14).
 
+### Compaction job
+`python -m app.compact --keep-ops 10000 --keep-days 7` deletes operations covered by a stored snapshot and outside the safety window (the larger of the two). It never deletes past the newest snapshot. Tested in `server/tests/test_repository.py` and `server/tests/test_compact.py`.
+
 ## 6. Retention and cleanup
 - Documents untouched for N days can be archived or deleted (configurable).
 - Deleting a document cascades to operations and snapshots.

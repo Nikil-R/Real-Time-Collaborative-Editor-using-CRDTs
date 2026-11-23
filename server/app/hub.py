@@ -31,7 +31,7 @@ class Client:
     name: str
     color: str
     socket: Sender
-    queue: asyncio.Queue[dict[str, Any] | None]
+    queue: asyncio.Queue[dict[str, Any] | str | None]
     writer: asyncio.Task[None] | None = None
     closed: bool = False
     tokens: float = 0.0
@@ -87,8 +87,11 @@ class Hub:
 
     # ------------------------------------------------------------ delivery
 
-    def enqueue(self, client: Client, message: dict[str, Any]) -> bool:
-        """Queue a message for one client. Returns False if the client was dropped."""
+    def enqueue(self, client: Client, message: dict[str, Any] | str) -> bool:
+        """Queue a message (a dict, or JSON text already encoded) for one client.
+
+        Returns False if the client was dropped.
+        """
         if client.closed:
             return False
         try:
@@ -108,11 +111,14 @@ class Hub:
     def broadcast(
         self, doc_id: str, message: dict[str, Any], exclude_replica: str | None = None
     ) -> int:
+        # Encode once, not once per recipient: with N clients in a room that is
+        # N times less JSON work for every stored operation.
+        encoded = json.dumps(message, separators=(",", ":"))
         sent = 0
         for client in list(self.room(doc_id).values()):
             if exclude_replica is not None and client.replica == exclude_replica:
                 continue
-            if self.enqueue(client, message):
+            if self.enqueue(client, encoded):
                 sent += 1
         return sent
 
@@ -127,7 +133,12 @@ class Hub:
                 message = await client.queue.get()
                 if message is None:
                     return
-                await client.socket.send_text(json.dumps(message, separators=(",", ":")))
+                text = (
+                    message
+                    if isinstance(message, str)
+                    else json.dumps(message, separators=(",", ":"))
+                )
+                await client.socket.send_text(text)
         except Exception:  # connection gone; the receive loop will clean up
             client.closed = True
 

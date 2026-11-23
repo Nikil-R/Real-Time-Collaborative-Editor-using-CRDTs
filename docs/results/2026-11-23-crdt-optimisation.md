@@ -37,3 +37,33 @@ because each pasted character then scanned for its origin. The position hint fix
 
 Next candidates, not done: a chunked list with per-chunk visible counts (design section 14,
 item 1) would remove the remaining linear scans.
+
+## Final run on an idle machine
+After the runs above, the whole benchmark was run once more with nothing else active on
+the machine (no other heavy job running, only light file edits; same script and sizes). Raw output:
+`2026-11-23-crdt-final-quiet.json`. Time in milliseconds, one run each.
+
+| Scenario | n | Baseline | Final (idle machine) | Baseline / final |
+|---|---|---|---|---|
+| one paste of n chars (chain of inserts) | 1,000 | 5.0 | 2.3 | 2.1x |
+| one paste of n chars (chain of inserts) | 10,000 | 39.2 | 11.1 | 3.5x |
+| one paste of n chars (chain of inserts) | 100,000 | 327.7 | 135.4 | 2.4x |
+| type n chars one by one at the end | 1,000 | 54.0 | 16.3 | 3.3x |
+| type n chars one by one at the end | 10,000 | 728.4 | 267.2 | 2.7x |
+| type n chars one by one at the end | 30,000 | 7,175.2 | 2,825.0 | 2.5x |
+| n random single-char inserts | 1,000 | 121.8 | 2.7 | 45.7x |
+| n random single-char inserts | 10,000 | 10,745.4 | 122.5 | 87.7x |
+| n random single-char inserts | 30,000 | 139,135.0 | 1,601.2 | 86.9x |
+| n random single-char deletes  | 1,000 | 30.3 | 12.8 | 2.4x |
+| n random single-char deletes  | 10,000 | 355.2 | 388.4 | 0.9x |
+| n random single-char deletes  | 30,000 | 6,647.3 | 5,717.0 | 1.2x |
+| apply n remote inserts one op at a time (in order) | 1,000 | 7.7 | 6.4 | 1.2x |
+| apply n remote inserts one op at a time (in order) | 10,000 | 202.2 | 274.2 | 0.7x |
+| apply n remote inserts one op at a time (in order) | 30,000 | 5,973.4 | 5,938.8 | 1.0x |
+
+What holds: random single-character inserts are about 87x faster at 10,000 and 30,000
+characters (the earlier noisy runs agreed in direction: at least 3.5x and 5.6x). Typing at the
+end and pasting are about 2x to 3.5x faster. Deletes and in-order remote apply did not
+improve (ratios between 0.7x and 1.2x are within the noise seen between runs), because they
+still scan for visible offsets. The baseline itself was taken while short commands ran on the
+machine, so its times may be inflated, which would overstate the ratios above.

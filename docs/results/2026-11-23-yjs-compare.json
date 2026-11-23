@@ -1,0 +1,49 @@
+{
+  "node": "v24.16.0",
+  "yjs": "see package.json",
+  "seed": 42,
+  "rows": [
+    {
+      "edits": 10000,
+      "finalChars": 11464,
+      "own": {
+        "applyLocalMs": 200.1655,
+        "replayRemoteMs": 332.7215,
+        "opsJsonBytes": 1885112,
+        "stateJsonBytes": 267350,
+        "heapMB": 5.1039581298828125,
+        "textMatches": true
+      },
+      "yjs": {
+        "applyLocalMs": 225.06470000000013,
+        "replayIncrementalMs": 106.80680000000007,
+        "replayMergedMs": 55.289999999999964,
+        "mergedUpdateBytes": 76828,
+        "incrementalUpdatesBytes": 251947,
+        "heapMB": 8.397735595703125,
+        "textMatches": true
+      }
+    },
+    {
+      "edits": 50000,
+      "finalChars": 59301,
+      "own": {
+        "applyLocalMs": 7074.9927,
+        "replayRemoteMs": 9750.5039,
+        "opsJsonBytes": 9661410,
+        "stateJsonBytes": 1404085,
+        "heapMB": 32.34553527832031,
+        "textMatches": true
+      },
+      "yjs": {
+        "applyLocalMs": 949.387999999999,
+        "replayIncrementalMs": 439.27579999999944,
+        "replayMergedMs": 43.52779999999984,
+        "mergedUpdateBytes": 415296,
+        "incrementalUpdatesBytes": 1356457,
+        "heapMB": -41.670379638671875,
+        "textMatches": true
+      }
+    }
+  ]
+}

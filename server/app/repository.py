@@ -6,6 +6,7 @@ opaque JSON object, plus the two fields used for de-duplication.
 
 from __future__ import annotations
 
+import asyncio
 import datetime as dt
 import uuid
 from dataclasses import dataclass
@@ -50,10 +51,48 @@ def _op_key(op: dict[str, Any]) -> tuple[str, int]:
     return op["op_id"]["r"], int(op["op_id"]["n"])
 
 
+class _Request:
+    """One caller's batch waiting to be written (see OperationLog.append_batch)."""
+
+    def __init__(
+        self,
+        batch: list[tuple[tuple[str, int], dict[str, Any]]],
+        future: asyncio.Future[AppendResult],
+    ) -> None:
+        self.batch = batch
+        self.future = future
+
+    def succeed(self, result: AppendResult) -> None:
+        if not self.future.done():
+            self.future.set_result(result)
+
+    def fail(self, exc: BaseException) -> None:
+        if not self.future.done():
+            self.future.set_exception(exc)
+
+
 class OperationLog:
     def __init__(self, engine: AsyncEngine) -> None:
         self.engine = engine
         self.session_factory = async_sessionmaker(engine, expire_on_commit=False)
+        # Writers of one document are serialised by a row lock in PostgreSQL.
+        # Doing the same inside this process first means waiting writers queue
+        # here instead of holding a pooled connection (PostgreSQL) or polling
+        # the file lock (SQLite). SQLite has one writer for the whole file, so
+        # there the lock is global.
+        self._global_write_lock = asyncio.Lock()
+        self._doc_write_locks: dict[uuid.UUID, asyncio.Lock] = {}
+        # Group commit: requests waiting per document, and the worker draining them.
+        self._queues: dict[uuid.UUID, list[_Request]] = {}
+        self._workers: dict[uuid.UUID, asyncio.Task[None]] = {}
+
+    def _write_lock(self, doc_id: uuid.UUID) -> asyncio.Lock:
+        if self.engine.dialect.name == "sqlite":
+            return self._global_write_lock
+        lock = self._doc_write_locks.get(doc_id)
+        if lock is None:
+            lock = self._doc_write_locks[doc_id] = asyncio.Lock()
+        return lock
 
     async def create_tables(self) -> None:
         async with self.engine.begin() as conn:
@@ -74,14 +113,13 @@ class OperationLog:
     # ------------------------------------------------------------------ write
 
     async def append_batch(self, doc_id: uuid.UUID, ops: list[dict[str, Any]]) -> AppendResult:
-        """Store a batch in ONE transaction (all or nothing).
+        """Store a batch atomically (all of it or none of it).
 
-        1. Reserve a range of seq numbers with a row-locking UPDATE. This
-           serialises writers of the same document and leaves other documents
-           alone.
-        2. Look up which (replica, counter) pairs are already stored.
-        3. Insert only the new ones and give back the unused reserved numbers,
-           so the sequence has no gaps.
+        Requests for the same document that arrive while a write is in progress
+        are grouped and stored in ONE transaction ("group commit"). With many
+        clients typing, most batches hold a single operation; one transaction
+        per batch made the database the bottleneck. Each caller still gets the
+        result for its own batch only.
         """
         unique: dict[tuple[str, int], dict[str, Any]] = {}
         for op in ops:
@@ -90,8 +128,58 @@ class OperationLog:
         if not batch:
             return AppendResult(new_ops=[], max_seq=0, duplicates=0, seqs=[])
 
-        async with self.session_factory() as session, session.begin():
-            reserved = len(batch)
+        future: asyncio.Future[AppendResult] = asyncio.get_running_loop().create_future()
+        self._queues.setdefault(doc_id, []).append(_Request(batch, future))
+        if doc_id not in self._workers:
+            self._workers[doc_id] = asyncio.create_task(self._drain(doc_id))
+        return await future
+
+    async def _drain(self, doc_id: uuid.UUID) -> None:
+        """Write everything queued for a document, group by group, until empty."""
+        try:
+            while self._queues.get(doc_id):
+                group = self._queues.pop(doc_id)
+                try:
+                    results = await self._write_group(doc_id, group)
+                except Exception as exc:
+                    if len(group) == 1:
+                        group[0].fail(exc)
+                        continue
+                    # One bad request must not fail the others: retry them one by one.
+                    for request in group:
+                        try:
+                            request.succeed((await self._write_group(doc_id, [request]))[0])
+                        except Exception as single_exc:
+                            request.fail(single_exc)
+                else:
+                    for request, result in zip(group, results, strict=True):
+                        request.succeed(result)
+        finally:
+            # No await between the loop check and this line, so a request that
+            # arrives later starts a fresh worker.
+            self._workers.pop(doc_id, None)
+
+    async def _write_group(self, doc_id: uuid.UUID, group: list[_Request]) -> list[AppendResult]:
+        """One transaction for a group of batches.
+
+        1. Reserve a range of seq numbers with a row-locking UPDATE (this is what
+           serialises writers across server processes).
+        2. Look up which (replica, counter) pairs are already stored.
+        3. Insert only the new ones, in request order, and give back the unused
+           reserved numbers so the sequence has no gaps.
+        """
+        # Operations of the whole group, first occurrence wins; the request that
+        # contains it first "owns" it (stores and broadcasts it).
+        owner: dict[tuple[str, int], int] = {}
+        ordered: list[tuple[tuple[str, int], dict[str, Any]]] = []
+        for index, request in enumerate(group):
+            for key, op in request.batch:
+                if key not in owner:
+                    owner[key] = index
+                    ordered.append((key, op))
+
+        async with self._write_lock(doc_id), self.session_factory() as session, session.begin():
+            reserved = len(ordered)
             result = await session.execute(
                 update(Document)
                 .where(Document.id == doc_id)
@@ -106,17 +194,15 @@ class OperationLog:
             existing_rows = await session.execute(
                 select(Operation.op_replica, Operation.op_counter, Operation.seq).where(
                     Operation.doc_id == doc_id,
-                    tuple_(Operation.op_replica, Operation.op_counter).in_([k for k, _ in batch]),
+                    tuple_(Operation.op_replica, Operation.op_counter).in_([k for k, _ in ordered]),
                 )
             )
-            existing = {(r, int(c)): int(s) for r, c, s in existing_rows}
+            seq_of: dict[tuple[str, int], int] = {(r, int(c)): int(s) for r, c, s in existing_rows}
 
-            new_ops: list[StoredOp] = []
-            seqs: list[int] = []
+            stored_new: dict[tuple[str, int], StoredOp] = {}
             next_seq = top - reserved + 1
-            for key, op in batch:
-                if key in existing:
-                    seqs.append(existing[key])
+            for key, op in ordered:
+                if key in seq_of:
                     continue
                 session.add(
                     Operation(
@@ -127,11 +213,11 @@ class OperationLog:
                         payload=op,
                     )
                 )
-                new_ops.append(StoredOp(seq=next_seq, payload=op))
-                seqs.append(next_seq)
+                stored_new[key] = StoredOp(seq=next_seq, payload=op)
+                seq_of[key] = next_seq
                 next_seq += 1
 
-            unused = reserved - len(new_ops)
+            unused = reserved - len(stored_new)
             if unused:
                 # Give back the reserved numbers that were not needed. We still
                 # hold the row lock taken by the UPDATE above, so nobody else
@@ -143,13 +229,21 @@ class OperationLog:
                     .values(last_seq=Document.last_seq - unused)
                 )
 
-            max_seq = max([s.seq for s in new_ops] + list(existing.values()))
-            return AppendResult(
-                new_ops=new_ops,
-                max_seq=max_seq,
-                duplicates=len(batch) - len(new_ops),
-                seqs=seqs,
-            )
+            results: list[AppendResult] = []
+            for index, request in enumerate(group):
+                mine = [
+                    stored_new[k] for k, _ in request.batch if owner[k] == index and k in stored_new
+                ]
+                seqs = [seq_of[k] for k, _ in request.batch]
+                results.append(
+                    AppendResult(
+                        new_ops=mine,
+                        max_seq=max(seqs),
+                        duplicates=len(request.batch) - len(mine),
+                        seqs=seqs,
+                    )
+                )
+            return results
 
     # ------------------------------------------------------------------- read
 

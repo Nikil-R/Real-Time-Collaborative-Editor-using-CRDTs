@@ -14,15 +14,17 @@ mkdirSync(results, { recursive: true });
 const duration = process.argv[2] ?? "30";
 const date = new Date().toISOString().slice(0, 10);
 
-let port = 8300;
+let port = Number(process.env.LOAD_PORT ?? 8320);
 let failures = 0;
 function run(label, extra) {
   const out = path.join(results, `${date}-${label}.md`);
   console.log(`\n=== ${label} ===`);
+  // No shell: the repository path contains spaces. Run tsx's CLI with this node.
+  const tsx = path.join(here, "node_modules", "tsx", "dist", "cli.mjs");
   const r = spawnSync(
-    "pnpm",
-    ["exec", "tsx", "src/run.ts", "--duration", duration, "--spawn-server", "--port", String(port++), "--out", out, ...extra],
-    { cwd: here, stdio: "inherit", shell: true },
+    process.execPath,
+    [tsx, "src/run.ts", "--duration", duration, "--spawn-server", "--port", String(port++), "--out", out, ...extra],
+    { cwd: here, stdio: "inherit" },
   );
   if (r.status !== 0) failures += 1;
 }
