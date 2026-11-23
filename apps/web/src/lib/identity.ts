@@ -28,6 +28,18 @@ export function setName(name: string): void {
   localStorage.setItem(NAME_KEY, name.trim().slice(0, 40) || `Guest-${randomSuffix()}`);
 }
 
+const COLOR_KEY = "rce:color";
+
+/** One colour per person (kept in localStorage), the same in every file and in the people list. */
+export function getColor(): string {
+  let color = localStorage.getItem(COLOR_KEY);
+  if (!color || !COLORS.includes(color)) {
+    color = COLORS[Math.floor(Math.random() * COLORS.length)]!;
+    localStorage.setItem(COLOR_KEY, color);
+  }
+  return color;
+}
+
 export function colorFor(key: string): string {
   let h = 0;
   for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) >>> 0;
