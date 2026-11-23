@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from sqlalchemy import delete, func, select, tuple_, update
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from .models import Base, Document, Operation, Snapshot
 
