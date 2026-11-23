@@ -1,0 +1,16 @@
+# Reverse proxy with automatic HTTPS (docker compose --profile demo up).
+# DOMAIN must resolve to this machine, and ports 80 and 443 must be reachable.
+{$DOMAIN} {
+	encode zstd gzip
+
+	# REST API and WebSocket go to the FastAPI server. Caddy upgrades
+	# WebSocket connections automatically and does not time out idle ones.
+	@api path /api/* /ws/* /health
+	reverse_proxy @api server:8000
+
+	# /metrics is internal (Prometheus reads it on the Docker network).
+	@metrics path /metrics
+	respond @metrics 404
+
+	reverse_proxy web:3000
+}

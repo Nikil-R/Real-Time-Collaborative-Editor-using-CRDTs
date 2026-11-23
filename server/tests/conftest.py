@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import os
 import socket
 from collections.abc import AsyncIterator, Callable
 from pathlib import Path
@@ -65,9 +66,29 @@ async def run_server(
         await task
 
 
+def database_url_for(tmp_path: Path, name: str = "test.db") -> str:
+    """SQLite file per test by default; a real PostgreSQL when TEST_DATABASE_URL is set."""
+    return os.environ.get("TEST_DATABASE_URL") or (
+        f"sqlite+aiosqlite:///{(tmp_path / name).as_posix()}"
+    )
+
+
+def redis_pair() -> tuple[Any, Any]:
+    """Two Redis clients on one (fake or real) Redis, for multi-process tests."""
+    url = os.environ.get("TEST_REDIS_URL")
+    if url:
+        from redis import asyncio as aioredis
+
+        return aioredis.from_url(url), aioredis.from_url(url)
+    import fakeredis
+
+    shared = fakeredis.FakeServer()
+    return fakeredis.FakeAsyncRedis(server=shared), fakeredis.FakeAsyncRedis(server=shared)
+
+
 def make_settings(tmp_path: Path, **overrides: Any) -> Settings:
     values: dict[str, Any] = {
-        "database_url": f"sqlite+aiosqlite:///{(tmp_path / 'test.db').as_posix()}",
+        "database_url": database_url_for(tmp_path),
         "auto_create_tables": True,
         "allowed_origins": "*",
         "log_level": "warning",

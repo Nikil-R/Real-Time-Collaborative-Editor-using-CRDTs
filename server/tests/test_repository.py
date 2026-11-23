@@ -15,14 +15,13 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from app.models import Operation
 from app.repository import DocumentNotFoundError, OperationLog
 
-from .conftest import dele, ins
+from .conftest import database_url_for, dele, ins
 
 
 @pytest.fixture
 async def oplog(tmp_path: Path) -> AsyncIterator[OperationLog]:
-    engine = create_async_engine(
-        f"sqlite+aiosqlite:///{(tmp_path / 'repo.db').as_posix()}", connect_args={"timeout": 30}
-    )
+    url = database_url_for(tmp_path, "repo.db")
+    engine = create_async_engine(url, connect_args={"timeout": 30} if "sqlite" in url else {})
     log = OperationLog(engine)
     await log.create_tables()
     yield log

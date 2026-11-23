@@ -9,20 +9,17 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable
 
-import fakeredis
 import httpx
 
 from app.config import Settings
 
-from .conftest import create_doc, ins, open_client, run_server
+from .conftest import create_doc, ins, open_client, redis_pair, run_server
 
 
 async def test_clients_on_different_processes_exchange_ops_and_presence(
     settings_factory: Callable[..., Settings],
 ) -> None:
-    redis_server = fakeredis.FakeServer()
-    r1 = fakeredis.FakeAsyncRedis(server=redis_server)
-    r2 = fakeredis.FakeAsyncRedis(server=redis_server)
+    r1, r2 = redis_pair()
     s1 = settings_factory(server_id="proc-1")
     s2 = settings_factory(server_id="proc-2", auto_create_tables=False)
     async with run_server(s1, r1) as one, run_server(s2, r2) as two:
@@ -63,13 +60,10 @@ async def test_clients_on_different_processes_exchange_ops_and_presence(
 async def test_new_client_on_second_process_sees_peers_of_the_first(
     settings_factory: Callable[..., Settings],
 ) -> None:
-    redis_server = fakeredis.FakeServer()
+    r1, r2 = redis_pair()
     s1 = settings_factory(server_id="proc-1")
     s2 = settings_factory(server_id="proc-2", auto_create_tables=False)
-    async with (
-        run_server(s1, fakeredis.FakeAsyncRedis(server=redis_server)) as one,
-        run_server(s2, fakeredis.FakeAsyncRedis(server=redis_server)) as two,
-    ):
+    async with run_server(s1, r1) as one, run_server(s2, r2) as two:
         doc = await create_doc(one)
         await asyncio.sleep(0.2)
         async with open_client(one, doc, "r-a", name="Priya") as (_a, _):
@@ -86,13 +80,10 @@ async def test_new_client_on_second_process_sees_peers_of_the_first(
 async def test_same_replica_on_two_processes_is_refused(
     settings_factory: Callable[..., Settings],
 ) -> None:
-    redis_server = fakeredis.FakeServer()
+    r1, r2 = redis_pair()
     s1 = settings_factory(server_id="proc-1")
     s2 = settings_factory(server_id="proc-2", auto_create_tables=False)
-    async with (
-        run_server(s1, fakeredis.FakeAsyncRedis(server=redis_server)) as one,
-        run_server(s2, fakeredis.FakeAsyncRedis(server=redis_server)) as two,
-    ):
+    async with run_server(s1, r1) as one, run_server(s2, r2) as two:
         doc = await create_doc(one)
         await asyncio.sleep(0.2)
         async with open_client(one, doc, "r-a"):
@@ -103,7 +94,7 @@ async def test_same_replica_on_two_processes_is_refused(
 
 
 async def test_health_reports_redis(settings_factory: Callable[..., Settings]) -> None:
-    redis = fakeredis.FakeAsyncRedis(server=fakeredis.FakeServer())
+    redis, _unused = redis_pair()
     async with run_server(settings_factory(), redis) as srv:
         async with httpx.AsyncClient() as http:
             health = (await http.get(f"{srv.http}/health")).json()

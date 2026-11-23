@@ -1,0 +1,70 @@
+{
+  "uid": "collab-editor",
+  "title": "Collaborative editor",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "5s",
+  "time": { "from": "now-15m", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Connected clients",
+      "gridPos": { "x": 0, "y": 0, "w": 6, "h": 5 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "expr": "sum(collab_connected_clients)", "refId": "A" }]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Operations stored per second",
+      "gridPos": { "x": 6, "y": 0, "w": 9, "h": 5 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "sum(rate(collab_ops_total[1m]))", "legendFormat": "new ops", "refId": "A" },
+        { "expr": "sum(rate(collab_duplicate_ops_total[1m]))", "legendFormat": "duplicates ignored", "refId": "B" }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Database write latency (per batch)",
+      "gridPos": { "x": 15, "y": 0, "w": 9, "h": 5 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "targets": [
+        { "expr": "histogram_quantile(0.50, sum(rate(collab_db_write_seconds_bucket[1m])) by (le))", "legendFormat": "p50", "refId": "A" },
+        { "expr": "histogram_quantile(0.99, sum(rate(collab_db_write_seconds_bucket[1m])) by (le))", "legendFormat": "p99", "refId": "B" }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Broadcast time to local clients",
+      "gridPos": { "x": 0, "y": 5, "w": 12, "h": 6 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "targets": [
+        { "expr": "histogram_quantile(0.99, sum(rate(collab_broadcast_seconds_bucket[1m])) by (le))", "legendFormat": "p99", "refId": "A" }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Errors sent to clients, by code",
+      "gridPos": { "x": 12, "y": 5, "w": 6, "h": 6 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "sum by (code) (rate(collab_errors_total[1m]))", "legendFormat": "{{code}}", "refId": "A" }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "stat",
+      "title": "Slow clients dropped",
+      "gridPos": { "x": 18, "y": 5, "w": 6, "h": 6 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "expr": "sum(collab_dropped_slow_clients_total)", "refId": "A" }]
+    }
+  ]
+}
