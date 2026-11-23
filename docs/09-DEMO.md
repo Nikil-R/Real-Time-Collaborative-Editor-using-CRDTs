@@ -1,4 +1,4 @@
-# 09 - Demo, Resume and Interview Preparation
+# 09 - Demo and Talking Points
 
 ## 1. 60-second demo script
 1. Open the live link in two windows side by side. Different names appear with coloured cursors.
@@ -8,7 +8,7 @@
 5. Open the debug panel. Show character IDs and a tombstone. Say: "Deleted characters stay as tombstones so concurrent edits still refer to something valid."
 6. Show the results table: convergence tests, latency numbers, comparison with Yjs.
 
-## 2. Resume bullets (fill in only with measured numbers)
+## 2. Summary bullets (fill in only with measured numbers)
 Use these templates and replace every `X`, `Y`, `N` with real values from `docs/results/`.
 
 - "Built a real-time collaborative text editor on a from-scratch RGA CRDT in TypeScript; verified convergence with property-based testing over N random multi-replica schedules (0 divergences)."
