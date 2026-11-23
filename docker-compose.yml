@@ -101,7 +101,7 @@ services:
     profiles: ["demo"]
     restart: unless-stopped
     environment:
-      DOMAIN: ${DOMAIN:?set DOMAIN to your host name}
+      DOMAIN: ${DOMAIN:-localhost}
     volumes:
       - ./ops/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
