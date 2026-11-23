@@ -13,3 +13,12 @@ export {
   type Op,
   type OpId,
 } from "./types";
+export {
+  fromWire,
+  idFromWire,
+  idToWire,
+  toWire,
+  type WireId,
+  type WireOp,
+  type WireOpId,
+} from "./wire";
