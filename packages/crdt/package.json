@@ -9,6 +9,7 @@
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:full": "node scripts/full-run.mjs 10000",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {

@@ -4,6 +4,7 @@
   "description": "Real-Time Collaborative Editor using CRDTs (monorepo root)",
   "scripts": {
     "test:crdt": "pnpm --filter @rce/crdt test",
+    "test:crdt:full": "pnpm --filter @rce/crdt test:full",
     "typecheck:crdt": "pnpm --filter @rce/crdt typecheck"
   }
 }
