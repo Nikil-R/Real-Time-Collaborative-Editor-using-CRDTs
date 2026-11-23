@@ -1,0 +1,9 @@
+{
+  "name": "realtime-collaborative-editor-crdt",
+  "private": true,
+  "description": "Real-Time Collaborative Editor using CRDTs (monorepo root)",
+  "scripts": {
+    "test:crdt": "pnpm --filter @rce/crdt test",
+    "typecheck:crdt": "pnpm --filter @rce/crdt typecheck"
+  }
+}
