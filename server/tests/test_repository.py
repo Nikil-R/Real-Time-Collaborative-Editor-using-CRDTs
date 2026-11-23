@@ -34,6 +34,7 @@ async def test_append_assigns_increasing_seq(oplog: OperationLog) -> None:
     r1 = await oplog.append_batch(doc.id, [ins("a", 1, 1), ins("a", 2, 2)])
     r2 = await oplog.append_batch(doc.id, [ins("a", 3, 3)])
     assert [o.seq for o in r1.new_ops] == [1, 2]
+    assert r1.seqs == [1, 2]
     assert [o.seq for o in r2.new_ops] == [3]
     assert r2.max_seq == 3
     assert await oplog.head_seq(doc.id) == 3
@@ -50,6 +51,7 @@ async def test_same_batch_twice_stores_nothing_new_but_reports_max_seq(
     assert again.new_ops == []
     assert again.duplicates == 2
     assert again.max_seq == first.max_seq
+    assert again.seqs == first.seqs
     assert len(await oplog.ops_since(doc.id, 0, 100)) == 2
 
 

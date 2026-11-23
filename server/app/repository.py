@@ -34,6 +34,10 @@ class AppendResult:
     new_ops: list[StoredOp]  # ops stored by this call, with their seq (to broadcast)
     max_seq: int  # highest seq among all ops of the batch, new or already stored
     duplicates: int
+    # seq of every op of the batch (new or already stored), in batch order. The
+    # sender never receives its own ops back, so the ack tells it which seq
+    # numbers they occupy.
+    seqs: list[int]
 
 
 @dataclass(frozen=True)
@@ -84,7 +88,7 @@ class OperationLog:
             unique.setdefault(_op_key(op), op)  # duplicates inside the batch
         batch = list(unique.items())
         if not batch:
-            return AppendResult(new_ops=[], max_seq=0, duplicates=0)
+            return AppendResult(new_ops=[], max_seq=0, duplicates=0, seqs=[])
 
         async with self.session_factory() as session, session.begin():
             reserved = len(batch)
@@ -108,9 +112,11 @@ class OperationLog:
             existing = {(r, int(c)): int(s) for r, c, s in existing_rows}
 
             new_ops: list[StoredOp] = []
+            seqs: list[int] = []
             next_seq = top - reserved + 1
             for key, op in batch:
                 if key in existing:
+                    seqs.append(existing[key])
                     continue
                 session.add(
                     Operation(
@@ -122,6 +128,7 @@ class OperationLog:
                     )
                 )
                 new_ops.append(StoredOp(seq=next_seq, payload=op))
+                seqs.append(next_seq)
                 next_seq += 1
 
             unused = reserved - len(new_ops)
@@ -138,7 +145,10 @@ class OperationLog:
 
             max_seq = max([s.seq for s in new_ops] + list(existing.values()))
             return AppendResult(
-                new_ops=new_ops, max_seq=max_seq, duplicates=len(batch) - len(new_ops)
+                new_ops=new_ops,
+                max_seq=max_seq,
+                duplicates=len(batch) - len(new_ops),
+                seqs=seqs,
             )
 
     # ------------------------------------------------------------------- read

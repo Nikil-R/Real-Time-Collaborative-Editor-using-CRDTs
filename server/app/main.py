@@ -367,7 +367,8 @@ async def _receive_loop(
             continue
 
         if isinstance(msg, proto.PingMsg):
-            reply({"type": "pong", "t": msg.t})
+            # head_seq lets a client notice it missed a broadcast (04-PROTOCOL.md 3.6).
+            reply({"type": "pong", "t": msg.t, "head_seq": await oplog.head_seq(doc_uuid)})
 
         elif isinstance(msg, proto.Hello):
             refuse(proto.BAD_MESSAGE, "hello already sent")
@@ -443,7 +444,7 @@ async def _store_and_broadcast(
     metrics.ops_total.inc(len(result.new_ops))
     metrics.duplicate_ops_total.inc(result.duplicates)
 
-    reply({"type": "ack", "batch_id": msg.batch_id, "max_seq": result.max_seq})
+    reply({"type": "ack", "batch_id": msg.batch_id, "max_seq": result.max_seq, "seqs": result.seqs})
 
     if result.new_ops:
         broadcast = {"type": "ops", "ops": _ops_payload(result.new_ops)}

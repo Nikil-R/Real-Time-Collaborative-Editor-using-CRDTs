@@ -51,7 +51,7 @@ async def test_ops_are_stored_acked_and_broadcast(server: RunningServer) -> None
         batch = [ins("r-a", 1, 1, ch="h"), ins("r-a", 2, 2, 1, "r-a", "i")]
         await a.send({"type": "ops", "batch_id": "b-1", "ops": batch})
         ack = await a.recv_type("ack")
-        assert ack == {"type": "ack", "batch_id": "b-1", "max_seq": 2}
+        assert ack == {"type": "ack", "batch_id": "b-1", "max_seq": 2, "seqs": [1, 2]}
         got = await b.recv_type("ops")
         assert [o["seq"] for o in got["ops"]] == [1, 2]
         assert got["ops"][0]["ch"] == "h"
@@ -73,6 +73,7 @@ async def test_same_batch_twice_is_acked_but_not_rebroadcast(server: RunningServ
         ack = await a.recv_type("ack")
         assert ack["batch_id"] == "b-2"
         assert ack["max_seq"] == 1
+        assert ack["seqs"] == [1]  # the already-stored op keeps its original seq
         await b.expect_silence()
 
 
@@ -265,7 +266,13 @@ async def test_ping_pong(server: RunningServer) -> None:
     doc = await create_doc(server)
     async with open_client(server, doc, "r-a") as (a, _):
         await a.send({"type": "ping", "t": 1732352000000})
-        assert (await a.recv_type("pong"))["t"] == 1732352000000
+        pong = await a.recv_type("pong")
+        assert pong["t"] == 1732352000000
+        assert pong["head_seq"] == 0
+        await a.send({"type": "ops", "batch_id": "1", "ops": [ins("r-a", 1, 1)]})
+        await a.recv_type("ack")
+        await a.send({"type": "ping", "t": 2})
+        assert (await a.recv_type("pong"))["head_seq"] == 1
 
 
 async def test_snapshot_upload_and_welcome_uses_it(server: RunningServer) -> None:

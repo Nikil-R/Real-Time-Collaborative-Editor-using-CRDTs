@@ -84,9 +84,9 @@ Reply to `sync`.
 ### 3.2 `ack`
 Confirms a batch is stored.
 ```json
-{ "type": "ack", "batch_id": "b-77", "max_seq": 1262 }
+{ "type": "ack", "batch_id": "b-77", "max_seq": 1262, "seqs": [1261, 1262] }
 ```
-The client may now delete those ops from its outbox.
+The client may now delete those ops from its outbox. `seqs` (v1.1, additive) lists the seq of every operation in the batch, in order, including operations that were already stored (duplicates keep their original seq). The sender never receives its own operations back, so this is how it learns which seq numbers they occupy and keeps its contiguous watermark moving.
 
 ### 3.3 `ops` (broadcast)
 Operations from other clients. Same op shape as the client message, plus `seq`.
@@ -107,8 +107,9 @@ Operations from other clients. Same op shape as the client message, plus `seq`.
 
 ### 3.6 `pong`
 ```json
-{ "type": "pong", "t": 1732352000000 }
+{ "type": "pong", "t": 1732352000000, "head_seq": 1263 }
 ```
+`head_seq` (v1.1, additive) is the document's highest seq. A client whose contiguous watermark is below it sends `sync`. This repairs a lost broadcast when nothing newer arrives to reveal the hole.
 
 ### 3.7 `error`
 ```json
