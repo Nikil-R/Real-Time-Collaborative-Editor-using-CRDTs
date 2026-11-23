@@ -33,7 +33,9 @@ export default defineConfig({
       reuseExistingServer: !process.env.CI,
       timeout: 60_000,
       env: {
-        DATABASE_URL: "sqlite+aiosqlite:///./e2e-test.db",
+        // A fresh file per run: tables are only created, never altered, on SQLite.
+        DATABASE_URL: `sqlite+aiosqlite:///./e2e-${Date.now()}.db`,
+        REDIS_URL: "",
         ALLOWED_ORIGINS: `http://localhost:${WEB_PORT}`,
         LOG_LEVEL: "warning",
       },

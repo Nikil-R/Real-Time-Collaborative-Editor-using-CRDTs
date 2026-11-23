@@ -76,6 +76,12 @@ Next.js is used as the frontend framework only. All editor, sync and offline cod
 ### 3.6 `loadtest`
 - Node script that opens many WebSocket clients, each running its own CRDT replica, typing random edits, then checking that all replicas converge. Reports latency and throughput.
 
+## 3b. Workspaces (projects and files)
+A **project** groups files; each file is an ordinary document with its own operation log, sequence numbers and WebSocket. The browser opens one `DocSession` per open tab.
+- **Python side** (`server/app/projects*.py`, `activity.py`): REST to create, rename and soft-delete files with validated paths; an atomic claim of starter text (the server cannot build CRDT operations, so exactly one client types it in); a project WebSocket `/ws/projects/{id}` that pushes the file list, who has which file open and the activity feed; edit activity counted in memory and flushed in batches so it never touches the hot write path.
+- **Browser side** (`apps/web`): `ProjectChannel` (reconnecting client of that channel), a Zustand `workspace-store`, and the components in `components/workspace` (explorer, tabs, status bar, panels, quick open).
+- Documented in `docs/04-PROTOCOL.md` section 8 and `docs/05-DATABASE.md` section 10.
+
 ## 4. Data flow: one keystroke
 1. User types "R" in browser A.
 2. CodeMirror reports a change. The binding calls `localInsert(index, "R")`.

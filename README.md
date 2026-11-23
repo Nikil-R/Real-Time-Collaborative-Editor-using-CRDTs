@@ -1,6 +1,18 @@
 # Real-Time Collaborative Editor using CRDTs
 
-A real-time collaborative text editor where many people type in the same document at once, work offline, and always end up with identical text on every device. The merge logic is a **CRDT (RGA, Replicated Growable Array) written from scratch** in dependency-free TypeScript, then compared against Yjs.
+A real-time **collaborative code workspace**: a multi-file project where many people edit at once, see each other's cursors and which file everyone has open, work offline, and always end up with identical code on every device. The merge logic is a **CRDT (RGA, Replicated Growable Array) written from scratch** in dependency-free TypeScript, then compared against Yjs.
+
+![Two people editing one project: file tree, tabs, live cursors, activity feed](docs/images/workspace-dark.png)
+
+<details>
+<summary>More screenshots</summary>
+
+| | |
+|---|---|
+| ![Landing page](docs/images/landing.png) | ![Light theme with Markdown preview](docs/images/workspace-light-preview.png) |
+| ![CRDT debug panel showing character ids and tombstones](docs/images/workspace-debug.png) | |
+
+</details>
 
 **Author:** Nikil R
 
@@ -39,7 +51,11 @@ Clients own the merge logic; the server owns delivery and storage. That is why o
 
 ## Features
 
-- Live multi-user editing with names, colours and remote cursors/selections (stored as character ids, so they stay on the right character while others type).
+- **Multi-file workspace:** file explorer with folders, tabs, quick open (`Ctrl P`), create, rename and delete files that everyone sees instantly, syntax highlighting for TypeScript, JavaScript, Python, JSON, Markdown, HTML and CSS, line numbers, bracket matching, autocomplete, search and a dark/light theme.
+- **Presence:** names, colours and remote cursors/selections (stored as character ids, so they stay on the right character while others type), plus a People list showing which file each person has open.
+- **Activity feed:** a shared history of who created, renamed and edited which file (edits are merged per person and file by the Python server).
+- **Markdown preview** that is sanitised, because another collaborator controls the text.
+- Live multi-user editing of every file through the CRDT.
 - Offline editing: typing never blocks; unsent edits are saved in IndexedDB and survive a reload; everything merges on reconnect.
 - Gap-free server sequence numbers and a contiguous client watermark, so a missed broadcast is always detected and repaired.
 - Client-uploaded snapshots and a compaction job for long documents.
@@ -57,7 +73,7 @@ cd server; uv sync; uv run uvicorn app.main:app --reload     # API on http://loc
 pnpm dev:web                                                  # app on http://localhost:3000 (second terminal, repo root)
 ```
 
-Open http://localhost:3000, create a document, and open the link in a second window. Use **Simulate offline** in the header to try the offline flow.
+Open http://localhost:3000, click **Create a workspace**, and open the link in a second window. Open different files in each window and watch the People list and cursors; use **Simulate offline** in the status bar to try the offline flow, and **Debug** to see the CRDT characters and tombstones.
 
 With Docker (written, not yet run on the development machine): `docker compose up --build` starts PostgreSQL, Redis, the server, the web app, Prometheus (9090) and Grafana (3001); `--profile scale` adds a second server process.
 
@@ -67,10 +83,11 @@ With Docker (written, not yet run on the development machine): `docker compose u
 |---|---|
 | CRDT unit and property tests | `pnpm test:crdt` (`pnpm test:crdt:full` for 10,000 schedules per property) |
 | Sync client (against an in-memory fake server, with chaos runs) | `pnpm test:client` |
-| Web unit tests | `pnpm test:web` |
+| Web unit tests (store, channel, binding, IndexedDB, Markdown sanitising) | `pnpm test:web` |
 | Server (SQLite and fake Redis) | `cd server; uv run pytest` |
 | Server against real PostgreSQL and Redis | set `TEST_DATABASE_URL` (e.g. `postgresql+asyncpg://user:pw@localhost:5432/collab_editor_test`) and `TEST_REDIS_URL`, then `uv run pytest` |
-| End-to-end, real browsers (Edge by default, `PW_CHANNEL=chromium` elsewhere) | `pnpm e2e` |
+| End-to-end, real browsers (Edge by default, `PW_CHANNEL=chromium` elsewhere); 17 tests | `pnpm e2e` |
+| Regenerate the README screenshots | `SCREENSHOTS=1 pnpm --filter @rce/web exec playwright test -g screenshots` |
 | Load test (10, 50, 100 clients), chaos run | `pnpm loadtest -- --clients 50 --duration 30 --spawn-server` (`--chaos` adds faults) |
 
 <!-- RESULTS:START -->
@@ -131,7 +148,7 @@ docs/               design, protocol, database, testing, deployment, results, le
 | Layer | Choice |
 |---|---|
 | CRDT core | TypeScript (strict), no runtime dependencies; Vitest + fast-check |
-| Web app | Next.js (App Router) + React + TypeScript, Tailwind CSS, shadcn-style components, Zustand, CodeMirror 6, Dexie (IndexedDB) |
+| Web app | Next.js (App Router) + React + TypeScript, Tailwind CSS (design tokens, dark/light), shadcn-style components, Zustand, CodeMirror 6 with language packs, Dexie (IndexedDB), marked + DOMPurify |
 | Server | Python, FastAPI + WebSockets, Pydantic v2, SQLAlchemy 2 (async), Alembic, structlog, uv, Ruff |
 | Storage | PostgreSQL (append-only operation log + snapshots); SQLite for local development |
 | Scale-out | Redis pub/sub |
@@ -142,7 +159,9 @@ docs/               design, protocol, database, testing, deployment, results, le
 ## Honest limitations
 
 - **Performance is a first version.** One node per character in an array: editing is O(n) per operation, a 50,000-edit trace is about 7x slower to apply and 22x slower to replay than Yjs, and the JSON wire format is about 23x larger than Yjs's merged update (see the Yjs comparison in `docs/results/`). Run-length encoding, a tree index and a binary format are the known fixes and are not done.
-- **Plain text only.** No rich text, no accounts or permissions (documents are shared by an unguessable link), no end-to-end encryption.
+- **Plain text only.** No rich text (the CRDT is a sequence of characters), no accounts or permissions (workspaces are shared by an unguessable link), no end-to-end encryption, no code execution.
+- **Starter text counts as an edit** in the activity feed: the server cannot build CRDT operations, so one client types the starter files in and that shows up as "edited".
+- **Project presence is per server process plus Redis**: if a server process crashes, its people stay in the list until their clients reconnect.
 - **Tombstones are never garbage collected**; memory and state size grow with deletes.
 - **Interleaving:** concurrent typing of whole words at one spot can interleave characters (a known weakness of simple sequence CRDTs).
 - **Measured on SQLite on one laptop**, with clients and server on the same machine. The results below say what that means; they are not production numbers.

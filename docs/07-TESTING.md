@@ -5,8 +5,8 @@ The project's credibility rests on tests that prove convergence. Demos are not p
 ## 0. What exists today (counts from the last local run)
 - `packages/crdt`: 62 Vitest tests, including 6 property tests over random multi-replica schedules (`pnpm test:crdt`; `FC_RUNS` sets the schedules per property, `pnpm test:crdt:full` uses 10,000).
 - `packages/client`: 29 tests against an in-memory fake server, including 8 seeded chaos runs.
-- `apps/web`: 10 unit tests (editor binding, IndexedDB store) and 9 Playwright tests.
-- `server`: 39 pytest tests (repository, protocol, relay, fan-out, compaction). They pass on SQLite with fakeredis and on PostgreSQL 18 with Redis 5.0 (`TEST_DATABASE_URL`, `TEST_REDIS_URL`).
+- `apps/web`: 33 unit tests (editor binding, IndexedDB store, workspace store, project channel, file tree, Markdown sanitising, language detection) and 17 Playwright tests (two-browser editing, offline and reload, file create/rename/delete, presence per file, activity feed, starter-text claim, Markdown preview, quick open, themes).
+- `server`: 50 pytest tests (repository, protocol, relay, fan-out, compaction, projects, project channel, activity). They pass on SQLite with fakeredis and on PostgreSQL 18 with Redis 5.0 (`TEST_DATABASE_URL`, `TEST_REDIS_URL`).
 - `loadtest`: 3 unit tests for the statistics, plus the load and chaos runner.
 
 ## 1. Test layers

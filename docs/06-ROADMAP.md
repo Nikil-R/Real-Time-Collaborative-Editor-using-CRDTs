@@ -9,7 +9,8 @@ The plan below was written as a 21-day schedule. It was executed in one pass ins
 | CRDT core (insert, delete, remote apply, pending buffer, cursors, state, wire codec) | Done. Property tests pass at 10,000 and 100,000 schedules per property (`docs/results/2026-11-23-crdt-convergence.md`). |
 | Performance baseline and one optimisation | Done, measured (`docs/results/2026-11-23-crdt-optimisation.md`). Deletes and in-order remote apply are still linear. |
 | Server skeleton, operation log, broadcast, snapshots, compaction | Done. All 39 server tests pass on SQLite with a fake Redis **and** on PostgreSQL 18 with a real Redis 5 (the Alembic migration was applied to an empty PostgreSQL database too). |
-| Next.js app, sync client, offline outbox, presence, debug panel | Done. 9 Playwright tests pass in Edge. |
+| Next.js app, sync client, offline outbox, presence, debug panel | Done. |
+| Workspace redesign: multi-file projects, file explorer, tabs, syntax highlighting, quick open, activity feed, Markdown preview, themes, new landing page | Done. Python project API and channel (11 tests), 17 Playwright tests in Edge, README screenshots. |
 | Redis multi-process fan-out | Done, tested with two server instances and a fake Redis. |
 | Load and chaos tests | Done, results in `docs/results/` (SQLite, same machine). 10 and 50 clients and the chaos run pass; 100 clients saturate the single-process server and do not catch up within the settle window. |
 | Yjs comparison | Done (`docs/results/2026-11-23-yjs-comparison.md`). Own implementation is slower and larger, as expected. |
