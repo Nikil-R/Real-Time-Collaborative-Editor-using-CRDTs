@@ -19,7 +19,7 @@ import structlog
 from fastapi import FastAPI, HTTPException, Response, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-from sqlalchemy import text
+from sqlalchemy import event, text
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from . import protocol as proto
@@ -35,6 +35,18 @@ log = structlog.get_logger()
 
 class CreateDocument(BaseModel):
     title: str = Field(default="Untitled", max_length=200)
+
+
+def _tune_sqlite(engine: AsyncEngine) -> None:
+    """Development database only: WAL and relaxed fsync, and enforce foreign keys."""
+
+    @event.listens_for(engine.sync_engine, "connect")
+    def _on_connect(dbapi_connection: Any, _record: Any) -> None:
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA synchronous=NORMAL")
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
 
 
 def _ops_payload(stored: list[StoredOp]) -> list[dict[str, Any]]:
@@ -56,8 +68,11 @@ def create_app(settings: Settings | None = None, redis_client: Any | None = None
         engine: AsyncEngine = create_async_engine(
             settings.async_database_url, connect_args=connect_args, pool_pre_ping=True
         )
+        if settings.async_database_url.startswith("sqlite"):
+            _tune_sqlite(engine)
         oplog = OperationLog(engine)
-        if settings.auto_create_tables:
+        # A local SQLite file is development only: create its tables on start-up.
+        if settings.auto_create_tables or settings.async_database_url.startswith("sqlite"):
             await oplog.create_tables()
 
         fanout: Fanout

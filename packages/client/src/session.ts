@@ -58,6 +58,10 @@ export interface SessionHooks {
   onError?(code: string, message: string): void;
   /** Called after each remote or local change, for UI counters. */
   onActivity?(): void;
+  /** Operations created by local edits (used by the load test to time them). */
+  onLocalOps?(ops: WireOp[]): void;
+  /** Operations received from the server, with their seq (load test, tracing). */
+  onServerOps?(ops: Array<WireOp & { seq: number }>): void;
 }
 
 export interface SessionConfig {
@@ -259,6 +263,7 @@ export class DocSession {
     if (ops.length === 0) return;
     const wire = ops.map((op) => toWire(op, { r: this.replicaId, n: this.nextOpN++ }));
     this.outbox.push(...wire);
+    this.hooks.onLocalOps?.(wire);
     // Persist BEFORE sending: a reload or crash must not lose acknowledged-looking typing.
     void this.opts.store.addToOutbox(wire, this.nextOpN);
     this.scheduleFlush();
@@ -501,6 +506,7 @@ export class DocSession {
     }
     const changes = this.replica.applyRemote(ops);
     if (changes.length > 0) this.hooks.onRemoteChanges?.(changes);
+    this.hooks.onServerOps?.(list);
     this.opsSinceSnapshot += ops.length;
     this.scheduleStateSave();
     this.checkForGap();
